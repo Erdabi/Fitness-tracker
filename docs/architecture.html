@@ -1,0 +1,1112 @@
+<title>Fitness Tracker Architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+
+<style>
+  /* ============================================================
+     Tokens — light is the base, both dark states redefine only vars
+     ============================================================ */
+  :root {
+    --ground:     #F5F6F8;
+    --surface:    #FFFFFF;
+    --surface-2:  #EEF0F4;
+    --ink:        #12151C;
+    --ink-2:      #39404E;
+    --muted:      #5C6474;
+    --rule:       #12151C;
+    --rule-soft:  #C9CED8;
+    --accent:     #2438A8;
+    --accent-bg:  #E7EAF8;
+    --amber:      #8F5D00;
+    --amber-bg:   #FBF0DC;
+    --teal:       #0E6353;
+    --teal-bg:    #DDEFEA;
+    --red:        #A8261E;
+    --red-bg:     #FAE4E2;
+    --shadow:     0 1px 2px rgba(18,21,28,.06), 0 8px 24px -12px rgba(18,21,28,.18);
+
+    --measure: 72ch;
+    --s1: .375rem;  --s2: .75rem;   --s3: 1.125rem;
+    --s4: 1.75rem;  --s5: 2.75rem;  --s6: 4.5rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:     #0E1116;
+      --surface:    #161A21;
+      --surface-2:  #1F242E;
+      --ink:        #E9EBEF;
+      --ink-2:      #C2C8D2;
+      --muted:      #949CAC;
+      --rule:       #E9EBEF;
+      --rule-soft:  #333A47;
+      --accent:     #8B9CF5;
+      --accent-bg:  #1C2340;
+      --amber:      #E3AA52;
+      --amber-bg:   #33270F;
+      --teal:       #55C4A9;
+      --teal-bg:    #0F2B26;
+      --red:        #F09187;
+      --red-bg:     #331714;
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground:     #0E1116;
+    --surface:    #161A21;
+    --surface-2:  #1F242E;
+    --ink:        #E9EBEF;
+    --ink-2:      #C2C8D2;
+    --muted:      #949CAC;
+    --rule:       #E9EBEF;
+    --rule-soft:  #333A47;
+    --accent:     #8B9CF5;
+    --accent-bg:  #1C2340;
+    --amber:      #E3AA52;
+    --amber-bg:   #33270F;
+    --teal:       #55C4A9;
+    --teal-bg:    #0F2B26;
+    --red:        #F09187;
+    --red-bg:     #331714;
+    --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  /* ============================================================
+     Base
+     ============================================================ */
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+    padding: 0 var(--s4) var(--s6);
+  }
+
+  .wrap { max-width: 60rem; margin: 0 auto; }
+  .prose { max-width: var(--measure); }
+
+  h1, h2, h3, h4 {
+    font-family: Archivo, "IBM Plex Sans", sans-serif;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  p { margin: 0 0 var(--s3); }
+  .prose > p:last-child { margin-bottom: 0; }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px;
+  }
+
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  p code, li code, td code {
+    font-size: .84em;
+    background: var(--surface-2);
+    padding: .12em .38em;
+    border-radius: 3px;
+    color: var(--ink-2);
+  }
+
+  /* ============================================================
+     Masthead — heavy rule hierarchy borrowed from nutrition labels
+     ============================================================ */
+  header.mast { padding: var(--s6) 0 var(--s4); }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .72rem;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  h1 {
+    font-size: clamp(2.4rem, 6.5vw, 3.9rem);
+    font-weight: 800;
+    letter-spacing: -.028em;
+    line-height: 1.02;
+    margin: var(--s2) 0 var(--s3);
+  }
+
+  .standfirst {
+    max-width: var(--measure);
+    font-size: 1.14rem;
+    color: var(--ink-2);
+  }
+
+  .bar-heavy { height: 9px; background: var(--rule); margin: var(--s4) 0 0; }
+  .bar-mid   { height: 3px; background: var(--rule); }
+  .bar-hair  { height: 1px; background: var(--rule-soft); }
+
+  .meta-strip {
+    display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4);
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .78rem;
+    color: var(--muted);
+    padding: var(--s2) 0;
+  }
+  .meta-strip b { color: var(--ink-2); font-weight: 500; }
+
+  /* ============================================================
+     Sections — number encodes the requested 10-step sequence
+     ============================================================ */
+  section { padding-top: var(--s5); scroll-margin-top: var(--s3); }
+
+  .sec-head { display: flex; align-items: baseline; gap: var(--s3); margin-bottom: var(--s2); }
+
+  .sec-num {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .8rem; font-weight: 600;
+    color: var(--accent);
+    padding-top: .45em;
+    flex: none;
+  }
+
+  h2 {
+    font-size: clamp(1.5rem, 3.4vw, 2.05rem);
+    font-weight: 700;
+    letter-spacing: -.02em;
+    line-height: 1.14;
+  }
+
+  h3 {
+    font-size: 1.16rem; font-weight: 700; letter-spacing: -.008em;
+    margin: var(--s4) 0 var(--s2);
+  }
+  h4 {
+    font-size: .95rem; font-weight: 700;
+    margin: var(--s3) 0 var(--s1);
+  }
+
+  /* ============================================================
+     Chips — state, not decoration
+     ============================================================ */
+  .chip {
+    display: inline-flex; align-items: center; gap: .4em;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .68rem; font-weight: 600;
+    letter-spacing: .07em; text-transform: uppercase;
+    padding: .22em .55em;
+    border-radius: 3px;
+    white-space: nowrap;
+    vertical-align: 2px;
+  }
+  .chip.rec  { background: var(--accent-bg); color: var(--accent); }
+  .chip.ask  { background: var(--red-bg);    color: var(--red); }
+  .chip.gap  { background: var(--amber-bg);  color: var(--amber); }
+  .chip.ok   { background: var(--teal-bg);   color: var(--teal); }
+  .chip.later{ background: var(--surface-2); color: var(--muted); }
+
+  /* ============================================================
+     Cards / grids
+     ============================================================ */
+  .grid { display: grid; gap: var(--s2); }
+  @media (min-width: 720px) {
+    .grid.two   { grid-template-columns: 1fr 1fr; }
+    .grid.three { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-radius: 6px;
+    padding: var(--s3);
+    box-shadow: var(--shadow);
+  }
+  .card h4 { margin-top: 0; }
+  .card p:last-child, .card ul:last-child { margin-bottom: 0; }
+
+  .card.flag { border-left: 4px solid var(--amber); }
+  .card.stop { border-left: 4px solid var(--red); }
+  .card.good { border-left: 4px solid var(--teal); }
+
+  /* ============================================================
+     Stack diagram
+     ============================================================ */
+  .stack { display: flex; flex-direction: column; gap: 4px; margin: var(--s3) 0; }
+  .layer {
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-left: 5px solid var(--accent);
+    border-radius: 4px;
+    padding: var(--s2) var(--s3);
+    display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); align-items: baseline;
+  }
+  .layer .lname {
+    font-family: Archivo, sans-serif; font-weight: 700; font-size: .9rem;
+    min-width: 8.5rem; flex: none;
+  }
+  .layer .lbody { font-size: .88rem; color: var(--ink-2); }
+  .layer.edge   { border-left-color: var(--amber); }
+  .layer.data   { border-left-color: var(--teal); }
+
+  /* Pipeline */
+  ol.pipe { list-style: none; counter-reset: p; padding: 0; margin: var(--s3) 0; display: grid; gap: 3px; }
+  ol.pipe li {
+    counter-increment: p;
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-radius: 4px;
+    padding: var(--s2) var(--s3) var(--s2) 3.1rem;
+    position: relative;
+    font-size: .9rem;
+  }
+  ol.pipe li::before {
+    content: counter(p);
+    position: absolute; left: var(--s2); top: 50%; transform: translateY(-50%);
+    font-family: "IBM Plex Mono", monospace; font-size: .72rem; font-weight: 600;
+    background: var(--accent); color: var(--surface);
+    width: 1.55rem; height: 1.55rem; border-radius: 50%;
+    display: grid; place-items: center;
+  }
+  :root[data-theme="dark"] ol.pipe li::before { color: #0E1116; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) ol.pipe li::before { color: #0E1116; }
+  }
+  ol.pipe li b { font-family: Archivo, sans-serif; }
+  ol.pipe li .where {
+    font-family: "IBM Plex Mono", monospace; font-size: .68rem;
+    text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+    display: block;
+  }
+
+  /* ============================================================
+     Tables
+     ============================================================ */
+  .scroll { overflow-x: auto; margin: var(--s3) 0; -webkit-overflow-scrolling: touch; }
+
+  table {
+    width: 100%; min-width: 34rem;
+    border-collapse: collapse;
+    font-size: .88rem;
+    font-variant-numeric: tabular-nums;
+  }
+  th {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .68rem; letter-spacing: .09em; text-transform: uppercase;
+    text-align: left; color: var(--muted);
+    padding: 0 var(--s2) var(--s1) 0;
+    border-bottom: 2px solid var(--rule);
+    white-space: nowrap;
+  }
+  td {
+    padding: var(--s2) var(--s2) var(--s2) 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  td:first-child { font-weight: 500; }
+  tr:last-child td { border-bottom: none; }
+
+  /* ============================================================
+     Code
+     ============================================================ */
+  pre {
+    background: var(--surface);
+    border: 1px solid var(--rule-soft);
+    border-radius: 6px;
+    padding: var(--s3);
+    overflow-x: auto;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: .795rem;
+    line-height: 1.62;
+    margin: var(--s3) 0;
+    color: var(--ink-2);
+    tab-size: 2;
+  }
+  pre b { color: var(--accent); font-weight: 600; }
+  pre i  { color: var(--muted); font-style: normal; }
+  pre u  { color: var(--teal); text-decoration: none; font-weight: 600; }
+
+  /* ============================================================
+     Lists
+     ============================================================ */
+  ul, ol { padding-left: 1.15rem; margin: 0 0 var(--s3); }
+  li { margin-bottom: var(--s1); }
+  li:last-child { margin-bottom: 0; }
+  ul.tight li { margin-bottom: 2px; }
+
+  dl.kv { margin: 0; }
+  dl.kv dt {
+    font-family: "IBM Plex Mono", monospace; font-size: .74rem;
+    text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+    margin-top: var(--s2);
+  }
+  dl.kv dd { margin: 0; font-size: .92rem; }
+
+  /* ============================================================
+     Phase rail
+     ============================================================ */
+  .phase {
+    display: grid; grid-template-columns: 4.5rem 1fr; gap: var(--s3);
+    padding: var(--s2) 0;
+    border-bottom: 1px solid var(--rule-soft);
+    align-items: start;
+  }
+  .phase:last-child { border-bottom: none; }
+  .phase .pnum {
+    font-family: Archivo, sans-serif; font-weight: 800; font-size: 1.05rem;
+    color: var(--accent);
+    letter-spacing: -.01em;
+  }
+  .phase .pnum small { display: block; font-family: "IBM Plex Mono", monospace;
+    font-size: .64rem; font-weight: 400; letter-spacing: .08em; color: var(--muted); text-transform: uppercase; }
+  .phase h4 { margin: 0 0 2px; }
+  .phase p { margin: 0; font-size: .88rem; color: var(--ink-2); }
+
+  /* ============================================================
+     Callout
+     ============================================================ */
+  .note {
+    border-left: 3px solid var(--rule-soft);
+    padding-left: var(--s3);
+    margin: var(--s3) 0;
+    font-size: .93rem;
+    color: var(--ink-2);
+  }
+  .note strong { color: var(--ink); }
+
+  details {
+    border: 1px solid var(--rule-soft);
+    border-radius: 6px;
+    padding: var(--s2) var(--s3);
+    background: var(--surface);
+    margin: var(--s2) 0;
+  }
+  summary { cursor: pointer; font-weight: 600; font-family: Archivo, sans-serif; font-size: .93rem; }
+  details[open] summary { margin-bottom: var(--s2); }
+
+  footer {
+    margin-top: var(--s6);
+    padding-top: var(--s3);
+    font-size: .85rem;
+    color: var(--muted);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+<header class="mast">
+  <div class="eyebrow">Architecture Proposal · Erdabi/Fitness-tracker</div>
+  <h1>Fitness&nbsp;Tracker<br>Architecture</h1>
+  <p class="standfirst">A production architecture for a cross-platform nutrition, hydration and training tracker with AI label extraction and meal-photo estimation. This document covers the ten items you asked for, plus the requirements the spec is missing. No implementation code yet — four decisions need your call first.</p>
+  <div class="bar-heavy"></div>
+  <div class="meta-strip">
+    <span>Repo <b>Erdabi/Fitness-tracker</b></span>
+    <span>Branch <b>claude/github-repo-connection-98d22n</b></span>
+    <span>Status <b>Awaiting approval</b></span>
+    <span>Date <b>2026-08-19</b></span>
+  </div>
+  <div class="bar-mid"></div>
+</header>
+
+<!-- ══════════════════════════════════════ 1 ══════════════════════════════════════ -->
+<section id="analysis">
+  <div class="sec-head"><span class="sec-num">01</span><h2>Requirements analysis — what the spec gets right, and what's missing</h2></div>
+
+  <div class="prose">
+    <p>The spec is unusually complete for a first pass. The five product areas are coherent, the AI-as-estimate framing is correct, and asking for a normalized schema up front avoids the mistake most trackers make. What follows is the delta: things that will bite during implementation if they aren't decided now, ordered by how expensive they are to retrofit.</p>
+  </div>
+
+  <h3>Gaps that change the schema — decide before the first migration</h3>
+
+  <div class="grid two">
+    <div class="card stop">
+      <h4>Offline-first is not optional <span class="chip gap">Missing</span></h4>
+      <p>People log food in supermarket basements and lift in gyms with no signal. An online-only app fails at exactly the moment of use. This affects every table (client-generated UUIDs, <code>updated_at</code>, soft deletes, an outbox) and is brutal to retrofit.</p>
+    </div>
+    <div class="card stop">
+      <h4>Nutrient snapshots on log rows <span class="chip gap">Missing</span></h4>
+      <p>If a log row only references <code>food_id</code>, then editing a food silently rewrites history — yesterday's 2,100 kcal becomes 2,400. Every <code>food_logs</code> row must carry a frozen copy of the nutrients as logged.</p>
+    </div>
+    <div class="card stop">
+      <h4>Local-date vs. UTC <span class="chip gap">Missing</span></h4>
+      <p>"Which day does this belong to?" must be resolved in the user's timezone at write time and stored as a plain <code>date</code>. Deriving it from a UTC timestamp puts an 11pm snack on tomorrow, and breaks again when they fly.</p>
+    </div>
+    <div class="card stop">
+      <h4>Units: metric and imperial <span class="chip gap">Missing</span></h4>
+      <p>Store canonical SI everywhere (g, ml, kg, cm), convert at the display boundary only. Mixed storage units are the single most common source of corrupt fitness data.</p>
+    </div>
+  </div>
+
+  <h3>Product decisions the spec leaves open</h3>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th style="width:26%">Question</th><th>Why it matters</th><th style="width:30%">My recommendation</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Where does "calories burned" come from?</td>
+        <td>The dashboard shows it but nothing produces it. Options: MET-value estimate per exercise, or import from Apple Health / Health Connect.</td>
+        <td>MET-based estimate per exercise (stored on <code>exercises.met</code>), plus optional health-platform import that overrides it.</td>
+      </tr>
+      <tr>
+        <td>Does exercise add calories back to the budget?</td>
+        <td>Changes the core dashboard maths. MyFitnessPal says yes; most coaches say no because burn estimates are inflated.</td>
+        <td>Make it a user setting, default <b>off</b>. Show burn as a separate stat, not as budget.</td>
+      </tr>
+      <tr>
+        <td>Guest mode, or signup wall?</td>
+        <td>A signup wall before any value is seen typically halves activation.</td>
+        <td>Anonymous session on first launch; prompt to link an account when they have data worth keeping.</td>
+      </tr>
+      <tr>
+        <td>Free vs. premium</td>
+        <td>AI scans have real per-call cost. If they're unlimited and free, cost scales with usage and nothing recovers it.</td>
+        <td>Decide the boundary now even if you ship free — put a server-side quota check in from day one.</td>
+      </tr>
+      <tr>
+        <td>Language(s) at launch</td>
+        <td>You're in Switzerland: DE/FR/IT matter, and food names are per-locale data, not UI strings.</td>
+        <td>English-only UI at launch, but design <code>foods.name_i18n jsonb</code> now so it isn't a migration later.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Legal and store-review items <span class="chip gap">Not in spec</span></h3>
+
+  <div class="grid two">
+    <div class="card flag">
+      <h4>Food data licensing</h4>
+      <p>This constrains the schema. <b>USDA FoodData Central</b> is public domain — safe for anything. <b>Open Food Facts</b> is ODbL: excellent EU barcode coverage, but requires attribution and share-alike on the database. Commercial APIs (Nutritionix, Edamam, FatSecret) are paid and forbid redistribution. Add <code>foods.source</code> and <code>foods.license</code> from the first migration.</p>
+    </div>
+    <div class="card flag">
+      <h4>Health data is a sensitive category</h4>
+      <p>GDPR / Swiss nFADP apply. You need a privacy policy, App Store privacy labels, data export, and hard account deletion (App Store guideline 5.1.1(v) makes deletion mandatory once you have accounts). Meal photos leaving the device to a model provider must be disclosed, and the provider contract must exclude training on your data.</p>
+    </div>
+    <div class="card flag">
+      <h4>Calorie-goal safety floors</h4>
+      <p>Apple and Google both scrutinise calorie trackers for eating-disorder risk. Clamp goals at a floor (commonly 1,200 kcal for women, 1,500 for men) with an explicit warning, cap deficit rate at ~1 kg/week, and carry a "not medical advice" disclaimer. Age-gate 16+.</p>
+    </div>
+    <div class="card flag">
+      <h4>AI accuracy framing</h4>
+      <p>Your spec already says estimates must be labelled as estimates — good. Make it structural, not a one-off string: a provenance chip (<b>verified</b> / <b>estimated</b> / <b>you entered this</b>) rendered by a shared component wherever a number appears.</p>
+    </div>
+  </div>
+
+  <h3>Features worth building that the spec omits <span class="chip later">Later phases</span></h3>
+  <div class="prose">
+    <ul class="tight">
+      <li><b>Copy / repeat meals</b> — "same as yesterday", recent &amp; frequent foods, multi-select add. This is the single biggest retention feature in every successful tracker, and it's cheap once the schema is right.</li>
+      <li><b>Quick-add calories</b> — log 350 kcal with no food attached, for restaurant meals.</li>
+      <li><b>Cooked-weight yield on recipes</b> — 500 g raw becomes 400 g cooked; without a yield field, per-gram density is wrong.</li>
+      <li><b>Training extras</b> — supersets, rest timer, previous-set hints in the logging row, estimated 1RM, automatic PR detection, plate calculator.</li>
+      <li><b>Streaks and reminders</b> — hydration nudges and a logging streak; the retention lever for a daily-use app.</li>
+      <li><b>Do other drinks count as water?</b> — a coffee logged as food optionally contributing to hydration.</li>
+    </ul>
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 2 ══════════════════════════════════════ -->
+<section id="stack">
+  <div class="sec-head"><span class="sec-num">02</span><h2>Technology stack</h2></div>
+
+  <div class="prose">
+    <p>You asked me to prefer React Native + Expo unless there's a strong reason not to. There isn't — Expo is the right call here, and the camera, barcode and background-task requirements are all first-class in the Expo ecosystem. The two non-obvious picks are the local database and the styling layer; my reasoning is in the table.</p>
+  </div>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th style="width:20%">Layer</th><th style="width:30%">Choice</th><th>Why this and not the alternative</th></tr></thead>
+    <tbody>
+      <tr><td>App framework</td><td><b>Expo SDK 54+</b> (React Native, TypeScript strict)</td><td>Managed native modules, EAS Build, OTA updates for JS-only fixes. Camera and barcode scanning require a <b>development build</b> — Expo Go won't work past week one, so set that up on day one.</td></tr>
+      <tr><td>Routing</td><td><b>Expo Router</b> (file-based)</td><td>Typed routes, deep links for free, layout-based tab/modal composition. Deep links matter later for notification taps.</td></tr>
+      <tr><td>Backend</td><td><b>Supabase</b> — Postgres, Auth, Storage, Edge Functions</td><td>You need a real normalized Postgres plus row-level security plus a server-side place to hold AI keys. Supabase gives all four without running infrastructure. A custom Node/Fastify + Prisma backend is more flexible but adds ops you don't need yet. <span class="chip ask">Your call — §10</span></td></tr>
+      <tr><td>On-device DB</td><td><b>SQLite</b> (<code>expo-sqlite</code>) + <b>Drizzle ORM</b></td><td>The device is the source of truth; the server is the sync target. Same schema language on both sides, real migrations, and typed queries. Also lets the app ship with a seeded food + exercise database so search works on first launch, offline.</td></tr>
+      <tr><td>Server state</td><td><b>TanStack Query</b></td><td>Sits over the local DB reads and the sync layer; gives caching, invalidation and optimistic updates without hand-rolled reducers.</td></tr>
+      <tr><td>Client state</td><td><b>Zustand</b></td><td>Only for genuinely ephemeral state: the in-progress workout, the scanner session, the rest timer. Redux is overkill when the durable state lives in SQLite.</td></tr>
+      <tr><td>Validation</td><td><b>Zod</b>, in a shared package</td><td>One schema definition imported by both the app and the Edge Functions. AI responses, API payloads and form input all validate against the same types. This is what makes "validate AI output" real rather than aspirational.</td></tr>
+      <tr><td>Forms</td><td><b>React Hook Form</b> + Zod resolver</td><td>Uncontrolled inputs — matters on the food-entry and set-logging screens where re-renders per keystroke are visible.</td></tr>
+      <tr><td>Styling</td><td><b>Unistyles v3</b> + a token layer</td><td>Theme switching with no re-render (C++ core), variants, breakpoints. NativeWind is the alternative if you prefer Tailwind idioms — say so and I'll switch; everything else is unaffected.</td></tr>
+      <tr><td>Motion</td><td><b>Reanimated 3</b> + <b>Gesture Handler</b></td><td>The difference between "app" and "polished app" is 60fps gesture-driven transitions. Needed for the swipe-to-delete diary rows and the set-logging interactions.</td></tr>
+      <tr><td>Lists</td><td><b>FlashList v2</b></td><td>Food search returns thousands of rows. FlatList drops frames at that size.</td></tr>
+      <tr><td>Camera</td><td><b>expo-camera</b> behind a <code>ScannerAdapter</code> interface</td><td>Supports EAN-13/8, UPC-A/E natively. If scan latency disappoints, swap to react-native-vision-camera behind the same interface without touching feature code.</td></tr>
+      <tr><td>Images</td><td><code>expo-image-manipulator</code> + <code>expo-image</code></td><td>Downscale and re-compress before upload — this is the largest single lever on AI latency and cost.</td></tr>
+      <tr><td>Charts</td><td><b>victory-native XL</b> on Skia</td><td>GPU-rendered; the progress charts stay smooth with a year of data.</td></tr>
+      <tr><td>Observability</td><td><b>Sentry</b> + <b>PostHog</b></td><td>With health-data-safe event design — never send food names, weights or photos as analytics properties.</td></tr>
+      <tr><td>Testing</td><td>Jest + RN Testing Library, <b>Maestro</b> E2E, Vitest for Edge Functions</td><td>Plus a golden-set eval suite for the AI extractors — see §5.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 3 ══════════════════════════════════════ -->
+<section id="architecture">
+  <div class="sec-head"><span class="sec-num">03</span><h2>System architecture</h2></div>
+
+  <div class="prose">
+    <p>Three tiers, with a hard rule: <b>the mobile app never holds a secret and never talks to a model provider directly.</b> Everything privileged goes through an Edge Function authenticated by the user's Supabase JWT.</p>
+  </div>
+
+  <div class="stack">
+    <div class="layer">
+      <span class="lname">Presentation</span>
+      <span class="lbody">Expo Router screens · design-system components · Reanimated transitions. Screens hold no business logic — they call feature hooks.</span>
+    </div>
+    <div class="layer">
+      <span class="lname">Feature logic</span>
+      <span class="lbody">Per-domain hooks and services (<code>useDiaryDay</code>, <code>logFood</code>, <code>estimateBurn</code>). Pure, unit-testable, no React Native imports where avoidable.</span>
+    </div>
+    <div class="layer data">
+      <span class="lname">Data access</span>
+      <span class="lbody">Drizzle repositories over SQLite. <b>Single source of truth for reads.</b> The UI never queries the network directly.</span>
+    </div>
+    <div class="layer data">
+      <span class="lname">Sync engine</span>
+      <span class="lbody">Outbox push + delta pull against Supabase, on a cursor of <code>updated_at</code>. Runs on app foreground, on connectivity regain, and after each mutation.</span>
+    </div>
+    <div class="layer edge">
+      <span class="lname">Edge Functions</span>
+      <span class="lbody">Deno, deployed with Supabase. Holds every secret. <code>analyze-label</code>, <code>analyze-meal</code>, <code>barcode-lookup</code>, <code>account-delete</code>, <code>export-data</code>.</span>
+    </div>
+    <div class="layer data">
+      <span class="lname">Postgres</span>
+      <span class="lbody">Normalized schema, row-level security on every user-owned table, full-text + trigram search, SQL functions for the aggregation-heavy reads.</span>
+    </div>
+    <div class="layer edge">
+      <span class="lname">External</span>
+      <span class="lbody">Model provider (label + meal vision) · Open Food Facts / USDA (food data) · Apple Health &amp; Health Connect (optional) · RevenueCat (if monetised).</span>
+    </div>
+  </div>
+
+  <h3>The read path that matters most</h3>
+  <div class="prose">
+    <p>The dashboard and diary are opened many times a day, so they get a dedicated path. Rather than fetching rows and summing in JavaScript, the day's totals come from a single indexed query over <code>food_logs</code>, <code>water_logs</code> and <code>workouts</code> filtered by <code>(user_id, logged_on)</code> — locally in SQLite, so it works offline and returns in under a frame.</p>
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 4 ══════════════════════════════════════ -->
+<section id="database">
+  <div class="sec-head"><span class="sec-num">04</span><h2>Database design</h2></div>
+
+  <div class="prose">
+    <p>Twenty-two tables across six domains. Three modelling decisions drive everything else, and they're the ones worth reviewing carefully.</p>
+  </div>
+
+  <div class="grid three">
+    <div class="card good">
+      <h4>1 · Canonical base units</h4>
+      <p>Every food stores nutrients <b>per 100 g or per 100 ml</b> (or per item, for countable foods). Human portions live separately in <code>food_servings</code> ("1 medium apple = 182 g"). Everything logged resolves to grams or millilitres internally.</p>
+      <p class="note" style="margin-bottom:0">Makes recipes, scaling and aggregation trivial, and eliminates unit ambiguity at the source.</p>
+    </div>
+    <div class="card good">
+      <h4>2 · Nutrients in a sibling table</h4>
+      <p>Fixed columns in <code>food_nutrients</code> (1:1 with <code>foods</code>), not an EAV key/value table. The nutrient set is small and fixed, and every query wants all of it at once.</p>
+      <p class="note" style="margin-bottom:0">Keeps <code>foods</code> narrow for search, and a <code>micros jsonb</code> column absorbs vitamins later without a migration.</p>
+    </div>
+    <div class="card good">
+      <h4>3 · Goals as validity ranges</h4>
+      <p>Not one row per day. <code>goal_periods</code> has <code>effective_from</code> / <code>effective_to</code>, so history is preserved and a year costs a handful of rows instead of 365.</p>
+      <p class="note" style="margin-bottom:0">A SQL function <code>goals_for_date()</code> hides the range lookup from callers.</p>
+    </div>
+  </div>
+
+  <h3>Tables by domain</h3>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th style="width:15%">Domain</th><th style="width:28%">Tables</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Identity</td>
+        <td><code>profiles</code> · <code>user_settings</code> · <code>goal_periods</code></td>
+        <td><code>profiles</code> is 1:1 with <code>auth.users</code>. Holds sex, birth date, height, unit system, timezone. <code>goal_periods</code> stores kcal/protein/carb/fat/fibre/water plus the BMR, TDEE, activity level and goal type that produced them, and whether they were calculated or manually overridden.</td>
+      </tr>
+      <tr>
+        <td>Food catalogue</td>
+        <td><code>brands</code> · <code>foods</code> · <code>food_nutrients</code> · <code>food_servings</code> · <code>food_barcodes</code></td>
+        <td><code>foods.source</code> distinguishes system / user / imported / AI-derived, and <code>owner_id</code> is null for shared rows. Custom foods are ordinary rows with an owner — <b>no separate <code>user_foods</code> table</b>, which avoids duplicating every query and join.</td>
+      </tr>
+      <tr>
+        <td>Recipes</td>
+        <td><code>recipes</code> · <code>recipe_ingredients</code></td>
+        <td><code>servings</code> plus optional <code>yield_g</code> for cooked weight. Totals are computed by a SQL function and cached on the row, invalidated when ingredients change.</td>
+      </tr>
+      <tr>
+        <td>Logging</td>
+        <td><code>food_logs</code> · <code>water_logs</code> · <code>body_measurements</code></td>
+        <td><code>food_logs</code> carries the nutrient snapshot and a <code>source</code> enum tracing how it was created (search / barcode / label scan / photo / recipe / quick add) — which is also what powers the provenance chips in the UI.</td>
+      </tr>
+      <tr>
+        <td>Training</td>
+        <td><code>exercises</code> · <code>workout_templates</code> · <code>workout_template_exercises</code> · <code>workouts</code> · <code>workout_exercises</code> · <code>workout_sets</code></td>
+        <td>Templates (the routine you design) are separate from sessions (the workout you performed). Conflating them is the most common mistake in workout apps — it makes history immutable and templates editable, which is what you want.</td>
+      </tr>
+      <tr>
+        <td>AI</td>
+        <td><code>ai_scan_results</code> · <code>ai_usage</code></td>
+        <td>Every scan is persisted with its raw response, parsed result, confidence, and — critically — <code>user_corrections</code>. That column is your evaluation dataset for improving prompts later.</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Core DDL — the parts worth agreeing on now</h3>
+
+  <pre><i>-- Nutrients are always per `base_amount` of `base_unit` (100 g / 100 ml / 1 item)</i>
+<b>create type</b> food_base_unit <b>as enum</b> ('g', 'ml', 'item');
+<b>create type</b> food_source    <b>as enum</b> ('system','user','openfoodfacts','usda','ai_label');
+<b>create type</b> meal_type      <b>as enum</b> ('breakfast','lunch','dinner','snack');
+<b>create type</b> log_source     <b>as enum</b> ('search','barcode','ai_label','ai_photo','recipe','quick_add','copy');
+
+<b>create table</b> foods (
+  id            uuid primary key default gen_random_uuid(),
+  owner_id      uuid references profiles(id) on delete cascade,  <i>-- null = shared catalogue</i>
+  brand_id      uuid references brands(id),
+  name          text not null,
+  name_i18n     jsonb not null default '{}',       <i>-- { "de": "...", "fr": "..." }</i>
+  base_unit     food_base_unit not null,
+  base_amount   numeric(8,2) not null default 100,
+  source        food_source not null,
+  license       text,                              <i>-- ODbL attribution obligations travel with the row</i>
+  is_verified   boolean not null default false,
+  search_tsv    tsvector generated always as (to_tsvector('simple', name)) stored,
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  deleted_at    timestamptz                        <i>-- soft delete, required for sync</i>
+);
+
+<b>create table</b> food_nutrients (
+  food_id       uuid primary key references foods(id) on delete cascade,
+  kcal          numeric(8,2) not null,
+  protein_g     numeric(8,2) not null default 0,
+  carb_g        numeric(8,2) not null default 0,
+  sugar_g       numeric(8,2),
+  fiber_g       numeric(8,2),
+  fat_g         numeric(8,2) not null default 0,
+  sat_fat_g     numeric(8,2),
+  sodium_mg     numeric(8,2),
+  micros        jsonb not null default '{}'        <i>-- vitamins etc., no migration needed</i>
+);
+
+<i>-- Human-readable portions. "1 medium" = 182 g, "1 slice" = 28 g.</i>
+<b>create table</b> food_servings (
+  id            uuid primary key default gen_random_uuid(),
+  food_id       uuid not null references foods(id) on delete cascade,
+  label         text not null,
+  amount        numeric(8,2) not null,             <i>-- expressed in the food's base_unit</i>
+  is_default    boolean not null default false,
+  sort_order    int not null default 0
+);
+
+<i>-- ── The single most important table in the app ──────────────────────</i>
+<b>create table</b> food_logs (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references profiles(id) on delete cascade,
+  logged_on     date not null,                     <u>-- resolved in the USER'S timezone</u>
+  logged_at     timestamptz not null default now(),
+  meal_type     meal_type not null,
+
+  food_id       uuid references foods(id),
+  recipe_id     uuid references recipes(id),
+  serving_id    uuid references food_servings(id),
+  quantity      numeric(8,2) not null,
+  amount_base   numeric(10,2) not null,            <i>-- resolved grams / ml / items</i>
+
+  <u>-- Frozen nutrient snapshot: editing a food must never rewrite history</u>
+  kcal          numeric(8,2) not null,
+  protein_g     numeric(8,2) not null,
+  carb_g        numeric(8,2) not null,
+  fat_g         numeric(8,2) not null,
+  fiber_g       numeric(8,2),
+  sugar_g       numeric(8,2),
+  sat_fat_g     numeric(8,2),
+  sodium_mg     numeric(8,2),
+  display_name  text not null,                     <i>-- so deleted foods still render</i>
+
+  source        log_source not null,
+  ai_scan_id    uuid references ai_scan_results(id),
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now(),
+  deleted_at    timestamptz,
+
+  <b>constraint</b> food_or_recipe <b>check</b> (num_nonnulls(food_id, recipe_id) = 1)
+);
+
+<b>create index</b> on food_logs (user_id, logged_on) <b>where</b> deleted_at <b>is null</b>;
+<b>create index</b> on food_logs (user_id, updated_at);   <i>-- delta sync cursor</i>
+</pre>
+
+  <details>
+    <summary>Training tables — templates vs. sessions</summary>
+<pre><b>create type</b> tracking_type <b>as enum</b>
+  ('weight_reps','reps','duration','distance_duration','weight_duration');
+
+<b>create table</b> exercises (
+  id            uuid primary key default gen_random_uuid(),
+  owner_id      uuid references profiles(id) on delete cascade,  <i>-- null = built-in</i>
+  name          text not null,
+  category      text not null,                     <i>-- strength | cardio | bodyweight | mobility</i>
+  tracking_type tracking_type not null,
+  primary_muscle    text,
+  secondary_muscles text[],
+  equipment     text,
+  met           numeric(4,2),                      <i>-- drives the burn estimate</i>
+  instructions  text,
+  updated_at    timestamptz not null default now(),
+  deleted_at    timestamptz
+);
+
+<i>-- A performed session. Immutable history.</i>
+<b>create table</b> workouts (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references profiles(id) on delete cascade,
+  template_id   uuid references workout_templates(id),
+  performed_on  date not null,                     <i>-- user-local, as above</i>
+  started_at    timestamptz not null,
+  ended_at      timestamptz,
+  duration_s    int,
+  total_volume_kg  numeric(10,2),                  <i>-- denormalised for the history list</i>
+  est_kcal      numeric(8,2),
+  notes         text,
+  updated_at    timestamptz not null default now(),
+  deleted_at    timestamptz
+);
+
+<b>create table</b> workout_sets (
+  id                  uuid primary key default gen_random_uuid(),
+  workout_exercise_id uuid not null references workout_exercises(id) on delete cascade,
+  set_index     int not null,
+  set_type      text not null default 'normal',    <i>-- normal | warmup | drop | failure</i>
+  weight_kg     numeric(7,2),
+  reps          int,
+  duration_s    int,
+  distance_m    numeric(9,2),
+  rpe           numeric(3,1),
+  is_completed  boolean not null default true,
+  <b>unique</b> (workout_exercise_id, set_index)
+);</pre>
+  </details>
+
+  <h3>Search</h3>
+  <div class="prose">
+    <p>Food search is the interaction users touch most, and generic <code>ILIKE '%query%'</code> makes an app feel cheap. A single Postgres function ranks results, mirrored by an equivalent FTS5 query locally:</p>
+    <ol class="tight">
+      <li>Exact barcode match</li>
+      <li>Foods this user has logged recently (recency-weighted) — the reason good trackers feel fast</li>
+      <li>This user's own custom foods and recipes</li>
+      <li>Verified branded foods, by full-text rank</li>
+      <li>Generic catalogue foods, with trigram fuzzy match to survive typos</li>
+    </ol>
+    <p>Indexes: GIN on <code>search_tsv</code>, <code>pg_trgm</code> on <code>name</code>, unique on <code>food_barcodes.barcode</code>.</p>
+  </div>
+
+  <h3>Row-level security</h3>
+  <div class="prose">
+    <p>RLS enabled on every table, no exceptions. User-owned tables get <code>using (auth.uid() = user_id)</code> for all four verbs. The catalogue tables take a split policy: shared rows (<code>owner_id is null</code>) are readable by everyone and writable by no one; owned rows are readable and writable only by their owner. Imports run through the service role, which exists only inside Edge Functions and never in the app bundle.</p>
+    <p class="note"><strong>Test it, don't assume it.</strong> RLS policies are code and can be wrong. The test suite should include a suite that authenticates as user A and asserts a zero-row result for every one of user B's tables.</p>
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 5 ══════════════════════════════════════ -->
+<section id="ai">
+  <div class="sec-head"><span class="sec-num">05</span><h2>AI architecture</h2></div>
+
+  <div class="prose">
+    <p>Two features, one pipeline. The design goal is that a wrong model output is <em>always</em> a recoverable UI state and <em>never</em> a corrupt database row.</p>
+  </div>
+
+  <ol class="pipe">
+    <li><span class="where">Device</span><b>Capture</b> — photo taken, then downscaled to ~1600px on the long edge and re-compressed. Cuts upload time, latency and token cost substantially with no measurable accuracy loss on labels.</li>
+    <li><span class="where">Device → Storage</span><b>Upload</b> to a private bucket at <code>{user_id}/{scan_id}.jpg</code>, guarded by a storage RLS policy. Uploading before invoking gives you retries, an audit trail, and the ability to re-run extraction later without asking the user to re-shoot.</li>
+    <li><span class="where">Edge Function</span><b>Invoke</b> <code>analyze-label</code> or <code>analyze-meal</code> with the storage path — never the image bytes. Function verifies the JWT, checks the user's quota, and hashes the image to short-circuit repeat scans.</li>
+    <li><span class="where">Edge Function</span><b>Extract</b> — the provider adapter calls the model with a structured-output schema, so the response conforms by construction rather than by prompt-begging.</li>
+    <li><span class="where">Edge Function</span><b>Validate</b> against the shared Zod schema. On failure, one retry with the validation error fed back. On second failure, return a typed error — never a partial object.</li>
+    <li><span class="where">Postgres</span><b>Persist</b> to <code>ai_scan_results</code> with status <code>succeeded</code>. Nothing has touched the diary yet.</li>
+    <li><span class="where">Device</span><b>Confirm</b> — the user sees every extracted field, editable, with per-field confidence surfaced. Low-confidence fields are pre-focused rather than silently accepted.</li>
+    <li><span class="where">Postgres</span><b>Commit</b> — on save, a <code>food_logs</code> row is written with <code>source = 'ai_label' | 'ai_photo'</code>, and the user's edits are diffed into <code>ai_scan_results.user_corrections</code>.</li>
+  </ol>
+
+  <h3>Provider abstraction</h3>
+  <div class="prose">
+    <p>One interface, implementations per vendor, selected by an environment variable inside the Edge Function. Feature code never names a vendor.</p>
+  </div>
+
+<pre><i>// packages/schemas/src/ai.ts — shared by the app and the Edge Functions</i>
+<b>export const</b> LabelExtraction = z.object({
+  productName:  z.string().nullable(),
+  servingSize:  z.object({ amount: z.number().positive(), unit: z.enum(['g','ml']) }).nullable(),
+  basis:        z.enum(['per_100g','per_100ml','per_serving']),
+  nutrients:    z.object({
+    kcal:      Measured, protein_g: Measured, carb_g:   Measured,
+    fat_g:     Measured, sugar_g:   Measured, fiber_g:  Measured,
+    satFat_g:  Measured, sodium_mg: Measured,
+  }),
+  overallConfidence: z.number().min(0).max(1),
+});
+
+<i>// Every field carries its own confidence — the confirm screen uses this
+// to decide what to highlight rather than showing one number for the whole scan.</i>
+<b>const</b> Measured = z.object({ value: z.number().nullable(), confidence: z.number().min(0).max(1) });
+
+<i>// supabase/functions/_shared/ai/provider.ts</i>
+<b>export interface</b> AIProvider {
+  analyzeNutritionLabel(img: ImageRef): Promise&lt;LabelExtraction&gt;;
+  analyzeFoodPhoto(img: ImageRef):      Promise&lt;MealEstimation&gt;;
+}</pre>
+
+  <h3>Model selection</h3>
+  <div class="prose">
+    <p>The two tasks have different difficulty profiles, so they shouldn't share a model by default. Label extraction is constrained OCR-plus-structure — a smaller model handles it accurately at a fraction of the cost. Meal estimation is genuinely hard visual reasoning (identify foods, estimate portions from perspective, recall nutrient densities) and deserves the strongest model.</p>
+    <p>Concretely: start both on <code>claude-opus-5</code> to establish an accuracy ceiling, then measure whether <code>claude-haiku-4-5</code> holds that accuracy on labels — it is roughly a fifth of the cost. Make the model a per-task config value so this is a deployment change, not a code change. Structured outputs go through <code>output_config.format</code> with a JSON schema, which is what makes step 5 above a formality rather than a gamble.</p>
+  </div>
+
+  <h3>Cost, abuse and quality control</h3>
+  <div class="grid two">
+    <div class="card">
+      <h4>Quotas</h4>
+      <p>Per-user daily scan limits enforced in the Edge Function against <code>ai_usage</code>, before the model call. This is also where an entitlement check goes if you monetise. Never enforce a limit client-side.</p>
+    </div>
+    <div class="card">
+      <h4>Deduplication</h4>
+      <p>Hash the image; if the same label was scanned before, return the cached extraction. Barcode-adjacent labels repeat constantly across a user base.</p>
+    </div>
+    <div class="card">
+      <h4>Prompt caching</h4>
+      <p>The extraction instructions are long, stable and identical on every call — cache the prefix and only the image varies. Meaningful cost reduction at volume, for no behavioural change.</p>
+    </div>
+    <div class="card">
+      <h4>Golden-set evals</h4>
+      <p>A fixture set of label photos with hand-verified ground truth, run in CI against per-nutrient tolerance thresholds. Without this, every prompt change is a blind change. <code>user_corrections</code> feeds this set over time.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Meal-photo estimates need honest UI.</strong> Portion estimation from a single photo without a size reference is inherently imprecise — a plausible error band is ±25–30%. Show a range rather than a single number, keep the wording as an estimate throughout, and make the portion slider the primary interaction on the confirm screen so correcting it feels expected rather than corrective.
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 6 ══════════════════════════════════════ -->
+<section id="structure">
+  <div class="sec-head"><span class="sec-num">06</span><h2>Folder structure</h2></div>
+
+  <div class="prose">
+    <p>Feature-first, not layer-first. A layer-first tree (<code>components/</code>, <code>hooks/</code>, <code>utils/</code>) means every change touches five directories; grouping by feature keeps a change local and makes it obvious where a new feature goes.</p>
+  </div>
+
+<pre>app/                          <i>— routes only; thin files that compose features</i>
+  (auth)/                     sign-in · sign-up · forgot-password
+  (onboarding)/               profile · goals · calculator · review
+  (tabs)/
+    index.tsx                 Home / dashboard
+    diary.tsx                 Food diary
+    scan.tsx                  Scan hub
+    train.tsx                 Training
+    progress.tsx              Progress
+  food/[id].tsx  ·  food/new  ·  recipe/[id]  ·  workout/active  ·  settings/
+  _layout.tsx
+
+src/
+  features/
+    nutrition/     components · hooks · services · queries · types
+    hydration/
+    training/
+    scanning/      barcode · label · meal · ScannerAdapter
+    ai/            client-side invoke + confirm-screen state machines
+    goals/         BMR/TDEE calculators, goal periods
+    progress/
+    profile/
+  components/ui/   Button · Card · Sheet · NumberField · MacroRing · ProvenanceChip · EmptyState
+  db/
+    schema/        drizzle table definitions (shared shape with Postgres)
+    migrations/
+    queries/       typed repositories
+    seed/          bundled foods + exercises shipped in the binary
+  sync/            outbox · pull · conflict resolution
+  api/             supabase client · generated DB types
+  theme/           tokens · typography · Unistyles config
+  lib/             units · dates (user-local) · nutrition maths · formatters
+
+packages/schemas/  <i>— Zod schemas shared by app and Edge Functions</i>
+
+supabase/
+  migrations/      timestamped SQL, the single source of schema truth
+  functions/
+    analyze-label/ · analyze-meal/ · barcode-lookup/ · account-delete/ · export-data/
+    _shared/       ai/ (provider adapters) · auth · quota · validation
+  seed/            catalogue import scripts
+
+scripts/           food-data import · eval runner
+e2e/               Maestro flows</pre>
+
+  <div class="note">
+    Two rules keep this from rotting: <b>features may not import from each other</b> — shared logic moves down into <code>lib/</code> or <code>components/ui/</code>; and <b>nutrition maths lives in exactly one place</b>, in <code>lib/nutrition</code>, imported by the diary, the recipe calculator, the AI confirm screens and the dashboard alike.
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 7 ══════════════════════════════════════ -->
+<section id="navigation">
+  <div class="sec-head"><span class="sec-num">07</span><h2>Navigation and screens</h2></div>
+
+  <div class="prose">
+    <p>Your five tabs are right. Two refinements:</p>
+    <ul>
+      <li><b>"Diary" rather than "Food"</b> — the tab is a day view, and naming it for the day is what makes the mental model click.</li>
+      <li><b>Scan is an action, not a destination.</b> Tapping the centre tab opens a sheet offering Barcode · Nutrition label · Meal photo · Quick add, then goes straight to the camera. Landing on a hub screen that only contains four buttons is a wasted tap on the app's most-used shortcut.</li>
+    </ul>
+  </div>
+
+  <div class="scroll">
+  <table>
+    <thead><tr><th style="width:16%">Tab</th><th style="width:26%">Screens</th><th>The job of the screen</th></tr></thead>
+    <tbody>
+      <tr><td><b>Home</b></td><td>Dashboard · Profile · Settings</td><td>Today at a glance: calorie ring with remaining, three macro bars, water, training status. Six quick actions. Nothing requiring a scroll to see whether the day is on track.</td></tr>
+      <tr><td><b>Diary</b></td><td>Day view · Food search · Food detail · Custom food editor · Recipe list &amp; editor</td><td>Meals as sections with running totals. Swipe to delete, long-press to copy. Search opens with recents and frequents already populated — most logging should never require typing.</td></tr>
+      <tr><td><b>Scan</b></td><td>Sheet → Barcode · Label camera · Meal camera · Quick add → Confirm</td><td>Camera opens in under a second. The confirm screen is shared by both AI paths and is the safety mechanism, so it gets the most design attention of any screen in the app.</td></tr>
+      <tr><td><b>Train</b></td><td>Templates · Active workout · History · Exercise library · Exercise detail</td><td>The active workout is the hardest screen: it must survive backgrounding, run a rest timer, show last session's numbers inline as targets, and keep the next input one tap away.</td></tr>
+      <tr><td><b>Progress</b></td><td>Weight · Nutrition trends · Strength · Body measurements</td><td>Weekly averages over daily noise — daily weight is mostly water and reading it as progress is discouraging. Volume and estimated 1RM per lift over time.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Design direction</h3>
+  <div class="prose">
+    <p>Every screen ships with four states designed, not three: <b>loading</b> (skeletons that match final layout, never spinners), <b>empty</b> (with the action that fills it), <b>error</b> (what happened and what to do), and <b>populated</b>. Numeric input uses a purpose-built keypad rather than the system numeric keyboard — logging 87.5 kg between sets should take one thumb and under a second.</p>
+    <p>Accessibility is not a later phase: dynamic type support, VoiceOver labels on every interactive element, 44pt minimum touch targets, contrast checked in both themes, and <code>prefers-reduced-motion</code> respected.</p>
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 8 ══════════════════════════════════════ -->
+<section id="security">
+  <div class="sec-head"><span class="sec-num">08</span><h2>Security</h2></div>
+
+  <div class="grid two">
+    <div class="card">
+      <h4>Secrets</h4>
+      <p>Model API keys and the Postgres service-role key exist only as Edge Function environment variables. The app bundle holds the Supabase URL and the anon key — both are public by design and useless without a valid JWT plus RLS.</p>
+      <p class="note" style="margin-bottom:0">Anything in <code>EXPO_PUBLIC_*</code> ships in the binary and is readable by anyone who unzips the IPA. Treat that prefix as "publish this to the internet".</p>
+    </div>
+    <div class="card">
+      <h4>Authorization</h4>
+      <p>RLS is the enforcement layer, not a backstop. Edge Functions call Postgres with the caller's JWT, not the service role, except for the narrow paths that genuinely need elevation (catalogue import, account deletion) — and those validate ownership explicitly first.</p>
+    </div>
+    <div class="card">
+      <h4>Input validation</h4>
+      <p>Every Edge Function input, every AI response, and every sync payload is Zod-parsed at the boundary. Postgres <code>CHECK</code> constraints repeat the critical invariants (non-negative nutrients, quantity &gt; 0, exactly one of food/recipe) so a bug in the app can't write nonsense.</p>
+    </div>
+    <div class="card">
+      <h4>Storage</h4>
+      <p>Meal and label photos go in a private bucket, path-prefixed by user ID with a matching storage policy. Access is via short-lived signed URLs only. Set a retention policy — deleting scan images after the scan is confirmed reduces both the storage bill and the breach surface.</p>
+    </div>
+    <div class="card">
+      <h4>Rate limiting</h4>
+      <p>Per-user and per-IP limits on the AI endpoints, enforced server-side before any spend. Without this, one script turns your model bill into an incident.</p>
+    </div>
+    <div class="card">
+      <h4>User rights</h4>
+      <p><code>export-data</code> and <code>account-delete</code> as first-class Edge Functions from the start. Deletion must cascade through storage objects too, not just rows — and it's an App Store requirement, not a nice-to-have.</p>
+    </div>
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 9 ══════════════════════════════════════ -->
+<section id="phases">
+  <div class="sec-head"><span class="sec-num">09</span><h2>Build order</h2></div>
+
+  <div class="prose">
+    <p>Sequenced so each phase is independently usable and reviewable, and so the riskiest unknowns (AI accuracy, sync correctness) land early enough to change course.</p>
+  </div>
+
+  <div class="phase">
+    <div class="pnum">0<small>Foundation</small></div>
+    <div><h4>Scaffold, design system, auth</h4><p>Expo + TypeScript strict, dev build with camera entitlements, lint/format/CI, theme tokens and the UI primitives, Supabase project, first migrations with RLS, auth flow.</p></div>
+  </div>
+  <div class="phase">
+    <div class="pnum">1<small>Core</small></div>
+    <div><h4>Onboarding, calculator, nutrition logging</h4><p>Mifflin-St Jeor BMR, TDEE, goal periods with manual override and safety floors. Food catalogue seed, ranked search, portion picker, diary, dashboard, custom foods. <b>This is the first genuinely useful build.</b></p></div>
+  </div>
+  <div class="phase">
+    <div class="pnum">2<small>Breadth</small></div>
+    <div><h4>Hydration and recipes</h4><p>Water quick-adds and history; recipe builder with computed totals, servings and yield; add-serving-to-diary.</p></div>
+  </div>
+  <div class="phase">
+    <div class="pnum">3<small>Scanning</small></div>
+    <div><h4>Barcode</h4><p>Scanner behind the adapter, local barcode lookup, external fallback with local caching. Proves the camera stack before AI depends on it.</p></div>
+  </div>
+  <div class="phase">
+    <div class="pnum">4<small>AI</small></div>
+    <div><h4>Label extraction, then meal photos</h4><p>Edge Functions, provider adapter, schema validation, quotas, the shared confirm screen, and the golden-set eval harness. Label first — it's the more tractable problem and de-risks the pipeline for meal photos.</p></div>
+  </div>
+  <div class="phase">
+    <div class="pnum">5<small>Training</small></div>
+    <div><h4>Full workout tracker</h4><p>Exercise library seed, templates, the active-workout screen with rest timer and backgrounding, history, volume and burn estimates.</p></div>
+  </div>
+  <div class="phase">
+    <div class="pnum">6<small>Depth</small></div>
+    <div><h4>Progress, sync hardening, health platforms</h4><p>Charts, weekly averages, PR detection. Conflict resolution and sync edge cases under real multi-device use. Apple Health / Health Connect.</p></div>
+  </div>
+  <div class="phase">
+    <div class="pnum">7<small>Ship</small></div>
+    <div><h4>Polish and submission</h4><p>Accessibility audit, empty and error states, performance passes, notifications, privacy policy, store assets, TestFlight and internal testing.</p></div>
+  </div>
+</section>
+
+<div class="bar-mid"></div>
+
+<!-- ══════════════════════════════════════ 10 ══════════════════════════════════════ -->
+<section id="decisions">
+  <div class="sec-head"><span class="sec-num">10</span><h2>Four decisions I need from you</h2></div>
+
+  <div class="prose">
+    <p>Everything above is settled apart from these. Each one changes code that's expensive to rewrite later, and I can't pick them for you from the spec alone.</p>
+  </div>
+
+  <div class="grid two">
+    <div class="card stop">
+      <h4>A · Backend platform <span class="chip ask">Blocking</span></h4>
+      <p><b>Supabase</b> (my recommendation) — Postgres, auth, storage, RLS and Edge Functions with no infrastructure to run. Versus a <b>custom Node/Fastify + Prisma</b> backend on your own host: more control, portable, but you own auth, deployment, scaling and monitoring.</p>
+    </div>
+    <div class="card stop">
+      <h4>B · Food data source <span class="chip ask">Blocking</span></h4>
+      <p><b>USDA FoodData Central + Open Food Facts</b> (my recommendation) — free, strong EU barcode coverage, but ODbL means attribution and share-alike obligations. Versus a <b>commercial API</b> (Nutritionix / Edamam): cleaner data, monthly cost, no redistribution rights. Versus <b>curated seed only</b>: fastest to ship, no barcode coverage.</p>
+    </div>
+    <div class="card stop">
+      <h4>C · Offline depth <span class="chip ask">Blocking</span></h4>
+      <p><b>Full offline-first from day one</b> (my recommendation) — SQLite as source of truth with a sync engine. Costs roughly a week up front and is very hard to retrofit. Versus <b>online-first with cached reads</b>: faster to a demo, but logging fails without signal, and converting later touches every screen.</p>
+    </div>
+    <div class="card stop">
+      <h4>D · AI provider <span class="chip ask">Blocking</span></h4>
+      <p>Which vendor sits behind <code>AIProvider</code> first. The abstraction means this is swappable, but the first implementation, the prompt work and the eval baseline all get built against one. Tell me which account you already have, or I'll assume Claude.</p>
+    </div>
+  </div>
+
+  <div class="note">
+    Nothing else is waiting on you. Once these four are answered I'll start at Phase 0 and work through in order, explaining each piece as I build it and committing to <code>claude/github-repo-connection-98d22n</code> — no implementation code before then.
+  </div>
+</section>
+
+<div class="bar-hair" style="margin-top:var(--s5)"></div>
+<footer>
+  Architecture proposal · Fitness Tracker · prepared for review, not yet implemented.
+</footer>
+
+</div>
