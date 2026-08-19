@@ -16,6 +16,7 @@ module.exports = {
       displayName: 'node',
       preset: undefined,
       testEnvironment: 'node',
+      setupFiles: ['<rootDir>/jest.setup.node.ts'],
       testMatch: [
         '<rootDir>/src/**/__tests__/**/*.node.test.ts',
         '<rootDir>/supabase/**/__tests__/**/*.node.test.ts',

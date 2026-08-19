@@ -5,8 +5,12 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { getDatabase } from '@/db/client';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { sync } from './engine';
+import { createSupabaseRemote } from './remote';
 import { countPending } from './outbox';
 import type { SyncStatus } from './types';
+
+/** One adapter for the app; tests inject their own through SyncContext. */
+const remote = createSupabaseRemote();
 
 const IDLE: SyncStatus = {
   phase: 'idle',
@@ -35,7 +39,7 @@ export function useSyncStatus(): SyncStatus & { syncNow: () => void } {
     const db = getDatabase();
     setStatus((current) => ({ ...current, phase: 'pushing' }));
 
-    const outcome = await sync({ db, userId });
+    const outcome = await sync({ db, userId, remote });
 
     running.current = false;
     setStatus({

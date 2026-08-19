@@ -27,12 +27,19 @@ create type public.theme_pref as enum ('light', 'dark', 'system');
 
 -- Authoritative modification time. Also blocks a client from forging
 -- `updated_at` to win a last-write-wins conflict it should have lost.
+--
+-- `clock_timestamp()`, not `now()`. `now()` is the transaction start time, so
+-- a transaction that begins early and commits late stamps a row with a time
+-- that may already be behind a cursor another device has advanced past — and
+-- that row would then never be pulled again. clock_timestamp() narrows the
+-- window to the commit path; `SYNC_CURSOR_LAG_MS` in src/sync/engine.ts closes
+-- what remains.
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
 as $$
 begin
-  new.updated_at := now();
+  new.updated_at := clock_timestamp();
   return new;
 end;
 $$;

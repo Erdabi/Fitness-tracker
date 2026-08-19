@@ -74,12 +74,7 @@ describe('outbox', () => {
 
     withOutbox(
       db,
-      {
-        table: 'profiles',
-        rowId: 'user-1',
-        operation: 'upsert',
-        payload: { id: 'user-1', display_name: 'Sam' },
-      },
+      { table: 'profiles', rowId: 'user-1', operation: 'upsert' },
       () => {
         db.run('UPDATE profiles SET display_name = ? WHERE id = ?', ['Sam', 'user-1']);
       },
@@ -93,22 +88,35 @@ describe('outbox', () => {
     ).toBe('Sam');
   });
 
+  /**
+   * The payload must be the full row. `descriptor.toRemote` runs at send time
+   * and needs every column; a partial patch would map absent fields to null
+   * and wipe server data on upsert.
+   */
+  it('queues the full row rather than the caller\'s patch', () => {
+    seedProfile();
+
+    withOutbox(db, { table: 'profiles', rowId: 'user-1', operation: 'upsert' }, () => {
+      db.run('UPDATE profiles SET display_name = ? WHERE id = ?', ['Sam', 'user-1']);
+    });
+
+    const entry = claimReady(db)[0] as OutboxEntry;
+    const payload = JSON.parse(entry.payload) as Record<string, unknown>;
+
+    expect(payload.id).toBe('user-1');
+    expect(payload.display_name).toBe('Sam');
+    expect(payload.unit_system).toBe('metric');
+    expect(payload).toHaveProperty('time_zone');
+    expect(payload).toHaveProperty('updated_at');
+  });
+
   it('queues nothing when the row write fails', () => {
     seedProfile();
 
     expect(() =>
-      withOutbox(
-        db,
-        {
-          table: 'profiles',
-          rowId: 'user-1',
-          operation: 'upsert',
-          payload: { id: 'user-1' },
-        },
-        () => {
-          db.run('UPDATE nonexistent_table SET x = 1');
-        },
-      ),
+      withOutbox(db, { table: 'profiles', rowId: 'user-1', operation: 'upsert' }, () => {
+        db.run('UPDATE nonexistent_table SET x = 1');
+      }),
     ).toThrow();
 
     expect(countPending(db)).toBe(0);

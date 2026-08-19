@@ -17,8 +17,12 @@ import { resolveDeviceTimeZone } from '@/lib/date';
 import { logger } from '@/lib/logger';
 import type { AppError, Result } from '@/lib/result';
 import { sync } from '@/sync/engine';
+import { createSupabaseRemote } from '@/sync/remote';
 import * as authService from './authService';
 import type { SignInInput, SignUpInput } from './validation';
+
+/** One adapter for the app; tests inject their own through SyncContext. */
+const remote = createSupabaseRemote();
 
 /**
  * Session state and the operations that change it.
@@ -72,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Deliberately not awaited: the UI reads from SQLite and must not wait on
     // the network. The engine handles its own failures.
-    void sync({ db: getDatabase(), userId: next.user.id });
+    void sync({ db: getDatabase(), userId: next.user.id, remote });
   }, []);
 
   useEffect(() => {

@@ -38,6 +38,16 @@ export function enqueue(
  *
  * Every mutation in the app goes through this. If `write` throws, nothing is
  * queued; if the process dies after commit, the entry is already durable.
+ *
+ * The queued payload is the **full local row, read back after the write** —
+ * not the caller's patch. Two reasons:
+ *
+ *   • The server representation is produced by `descriptor.toRemote` at send
+ *     time, and that mapping needs every column. A partial patch would map
+ *     absent fields to null and wipe server data.
+ *
+ *   • Consecutive edits collapse correctly: whichever entry sends last carries
+ *     a complete, self-consistent row rather than a fragment.
  */
 export function withOutbox(
   db: SqlDatabase,
@@ -45,13 +55,30 @@ export function withOutbox(
     table: SyncableTable;
     rowId: string;
     operation: OutboxOperation;
-    payload: Record<string, unknown>;
   },
   write: () => void,
 ): void {
   db.transaction(() => {
     write();
-    enqueue(db, entry);
+
+    if (entry.operation === 'delete') {
+      enqueue(db, { ...entry, payload: { id: entry.rowId } });
+      return;
+    }
+
+    const row = db.get<Record<string, unknown>>(
+      `SELECT * FROM ${entry.table} WHERE id = ?`,
+      [entry.rowId],
+    );
+
+    if (!row) {
+      throw new Error(
+        `Cannot queue ${entry.table}/${entry.rowId} for sync: the row does not ` +
+          'exist after the write.',
+      );
+    }
+
+    enqueue(db, { ...entry, payload: row });
   });
 }
 

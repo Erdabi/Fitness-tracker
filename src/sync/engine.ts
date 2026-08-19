@@ -1,6 +1,3 @@
-import type { SupabaseClient } from '@supabase/supabase-js';
-
-import { supabase } from '@/api/supabase';
 import type { SqlDatabase } from '@/db/types';
 import { logger } from '@/lib/logger';
 import { advanceCursor, resolve } from './merge';
@@ -13,18 +10,8 @@ import {
   writeCursor,
 } from './outbox';
 import { SYNC_REGISTRY } from './registry';
+import type { RemoteAdapter } from './remote';
 import type { AnyRow, OutboxEntry, SyncContext, TableDescriptor } from './types';
-
-/**
- * The engine addresses tables by name at runtime, so it cannot use the
- * per-table generated types — those require a literal table name known at the
- * call site. Narrowing to the untyped client once here keeps that concession
- * in a single place instead of a cast on every query.
- *
- * Safety is not lost: the table names come from `RemoteTable`, and every row
- * that crosses this boundary is shaped by a typed descriptor mapping.
- */
-const client = supabase as unknown as SupabaseClient;
 
 /**
  * Bidirectional sync between the local SQLite database and Supabase.
@@ -36,6 +23,16 @@ const client = supabase as unknown as SupabaseClient;
 
 /** Rows per pull request. Bounded so a large backlog cannot exhaust memory. */
 const PULL_PAGE_SIZE = 500;
+
+/** Pages per table per cycle, so one huge backlog cannot stall the others. */
+const MAX_PULL_PAGES = 20;
+
+/**
+ * How far the pull cursor is rewound before querying. See `overlapFrom`.
+ * Generous enough to cover a slow commit, small enough that the re-fetched
+ * window stays trivial.
+ */
+export const SYNC_CURSOR_LAG_MS = 5_000;
 
 let inFlight: Promise<SyncOutcome> | null = null;
 
@@ -87,7 +84,7 @@ async function runCycle(context: SyncContext): Promise<SyncOutcome> {
 /* ------------------------------------------------------------------ push -- */
 
 async function push(context: SyncContext): Promise<{ sent: number; abandoned: number }> {
-  const { db } = context;
+  const { db, remote } = context;
   let sent = 0;
   let abandoned = 0;
 
@@ -100,7 +97,7 @@ async function push(context: SyncContext): Promise<{ sent: number; abandoned: nu
       continue;
     }
 
-    const failure = await sendEntry(entry, descriptor);
+    const failure = await sendEntry(remote, entry, descriptor);
 
     if (failure === null) {
       markSucceeded(db, entry.id);
@@ -122,24 +119,22 @@ async function push(context: SyncContext): Promise<{ sent: number; abandoned: nu
 
 /** Returns null on success, or the failure reason. */
 async function sendEntry(
+  remote: RemoteAdapter,
   entry: OutboxEntry,
   descriptor: TableDescriptor,
 ): Promise<string | null> {
-  const payload = safeParse(entry.payload);
-  if (!payload) return 'Malformed outbox payload';
-
   if (entry.operation === 'delete') {
-    const { error } = await client
-      .from(descriptor.remoteTable)
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', entry.row_id);
-    return error?.message ?? null;
+    return remote.softDelete(descriptor.remoteTable, entry.row_id);
   }
 
-  const { error } = await client
-    .from(descriptor.remoteTable)
-    .upsert(payload, { onConflict: 'id' });
-  return error?.message ?? null;
+  const localRow = safeParse(entry.payload);
+  if (!localRow) return 'Malformed outbox payload';
+
+  // The outbox stores the full local row; the descriptor converts it to the
+  // server's representation here. Doing it at send time rather than at enqueue
+  // time is what keeps type coercions (SQLite 0/1 -> Postgres boolean, epoch
+  // millis -> timestamptz) in exactly one place.
+  return remote.upsert(descriptor.remoteTable, descriptor.toRemote(localRow));
 }
 
 /* ------------------------------------------------------------------ pull -- */
@@ -156,44 +151,71 @@ async function pullTable(
   context: SyncContext,
   descriptor: TableDescriptor,
 ): Promise<number> {
-  const { db, userId } = context;
-  const cursor = readCursor(db, descriptor.table);
+  const { db, userId, remote } = context;
+  const startingCursor = readCursor(db, descriptor.table);
 
-  let query = client
-    .from(descriptor.remoteTable)
-    .select('*')
-    .eq(descriptor.userColumn, userId)
-    .order('updated_at', { ascending: true })
-    .limit(PULL_PAGE_SIZE);
-
-  // A null cursor means "first sync" — take everything the user owns.
-  if (cursor) query = query.gt('updated_at', cursor);
-
-  const { data, error } = await query;
-  if (error)
-    throw new Error(`Pull failed for ${descriptor.remoteTable}: ${error.message}`);
-  if (!data || data.length === 0) return 0;
-
+  let cursor = startingCursor;
   let applied = 0;
 
-  db.transaction(() => {
-    for (const remoteRow of data as AnyRow[]) {
-      if (applyRemoteRow(db, descriptor, remoteRow)) applied += 1;
-    }
+  // Pages until the server returns a short page. Without the loop a backlog
+  // larger than one page would need as many sync cycles as it has pages.
+  for (let page = 0; page < MAX_PULL_PAGES; page += 1) {
+    // A null cursor means "first sync" — take everything the user owns.
+    const rows = await remote.fetchChanged({
+      table: descriptor.remoteTable,
+      userColumn: descriptor.userColumn,
+      userId,
+      since: overlapFrom(cursor),
+      limit: PULL_PAGE_SIZE,
+    });
 
-    writeCursor(
-      db,
-      descriptor.table,
-      advanceCursor(
+    if (rows.length === 0) break;
+
+    db.transaction(() => {
+      for (const remoteRow of rows) {
+        if (applyRemoteRow(db, descriptor, remoteRow)) applied += 1;
+      }
+
+      cursor = advanceCursor(
         cursor,
-        (data as AnyRow[]).map((row) =>
-          typeof row.updated_at === 'string' ? row.updated_at : null,
-        ),
-      ),
-    );
-  });
+        rows.map((row) => (typeof row.updated_at === 'string' ? row.updated_at : null)),
+      );
+      writeCursor(db, descriptor.table, cursor);
+    });
+
+    if (rows.length < PULL_PAGE_SIZE) break;
+
+    // A full page whose newest row does not move the cursor means more rows
+    // share that exact timestamp than fit in a page. Paging again would
+    // re-fetch the same rows forever, so stop and let the next cycle try.
+    if (cursor === startingCursor) break;
+  }
 
   return applied;
+}
+
+/**
+ * Rewinds the cursor by a small window before querying.
+ *
+ * Two failure modes make an exact `> cursor` unsafe:
+ *
+ *   • Commit ordering. A row's `updated_at` is stamped before its transaction
+ *     commits, so a slow transaction can land a row whose timestamp is already
+ *     behind a cursor a previous pull advanced past. That row would never be
+ *     seen again.
+ *
+ *   • Page boundaries. Rows sharing an identical timestamp can straddle the
+ *     end of a page; a strict `>` would skip the remainder permanently.
+ *
+ * Re-fetching a few seconds of overlap costs one small page and is harmless:
+ * applying a row is idempotent, and `resolve()` discards anything not newer
+ * than what is already local.
+ */
+function overlapFrom(cursor: string | null): string | null {
+  if (!cursor) return null;
+  const ms = Date.parse(cursor);
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms - SYNC_CURSOR_LAG_MS).toISOString();
 }
 
 /** Returns true when the local row was changed. */

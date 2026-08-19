@@ -97,12 +97,7 @@ export function updateProfile(
 
   withOutbox(
     db,
-    {
-      table: 'profiles',
-      rowId: userId,
-      operation: 'upsert',
-      payload: { id: userId, ...pick(patch, fields) },
-    },
+    { table: 'profiles', rowId: userId, operation: 'upsert' },
     () => {
       db.run(`UPDATE profiles SET ${assignments}, updated_at = ? WHERE id = ?`, [
         ...values,
@@ -140,12 +135,7 @@ export function updateSettings(
 
   withOutbox(
     db,
-    {
-      table: 'user_settings',
-      rowId: existing.id,
-      operation: 'upsert',
-      payload: { id: existing.id, user_id: userId, ...pick(patch, fields) },
-    },
+    { table: 'user_settings', rowId: existing.id, operation: 'upsert' },
     () => {
       db.run(
         `UPDATE user_settings SET ${assignments}, updated_at = ? WHERE user_id = ?`,
@@ -153,15 +143,4 @@ export function updateSettings(
       );
     },
   );
-}
-
-function pick<T extends object, K extends keyof T>(
-  source: T,
-  keys: readonly K[],
-): Partial<T> {
-  const result: Partial<T> = {};
-  for (const key of keys) {
-    if (key in source) result[key] = source[key];
-  }
-  return result;
 }

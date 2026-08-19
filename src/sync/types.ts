@@ -1,5 +1,6 @@
 import type { Database } from '@/api/database.types';
 import type { SqlDatabase } from '@/db/types';
+import type { RemoteAdapter } from './remote';
 
 /** Tables that participate in sync. Extended as features land. */
 export type SyncableTable = 'profiles' | 'user_settings';
@@ -68,6 +69,8 @@ export function describeTable<TLocal extends object>(descriptor: {
 export interface SyncContext {
   readonly db: SqlDatabase;
   readonly userId: string;
+  /** Injected so the engine can be driven end-to-end in tests. */
+  readonly remote: RemoteAdapter;
 }
 
 export type SyncPhase = 'idle' | 'pushing' | 'pulling';

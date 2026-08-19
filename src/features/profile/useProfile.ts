@@ -12,6 +12,7 @@ import {
 } from '@/db/repositories/profiles';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { sync } from '@/sync/engine';
+import { createSupabaseRemote } from '@/sync/remote';
 
 /**
  * Profile and settings, read from SQLite.
@@ -20,6 +21,9 @@ import { sync } from '@/sync/engine';
  * a network round trip and works offline. Sync updates the same rows in the
  * background; invalidating after a write is what surfaces the change.
  */
+
+/** One adapter for the app; tests inject their own through SyncContext. */
+const remote = createSupabaseRemote();
 
 const profileKey = (userId: string) => ['profile', userId] as const;
 
@@ -53,7 +57,7 @@ export function useProfile() {
       invalidate();
       // Not awaited: the local write already succeeded and the UI reads from
       // SQLite. Pushing is the engine's problem, and it retries on failure.
-      void sync({ db: getDatabase(), userId });
+      void sync({ db: getDatabase(), userId, remote });
     },
     [userId, invalidate],
   );
@@ -63,7 +67,7 @@ export function useProfile() {
       if (!userId) return;
       updateSettings(userId, patch);
       invalidate();
-      void sync({ db: getDatabase(), userId });
+      void sync({ db: getDatabase(), userId, remote });
     },
     [userId, invalidate],
   );

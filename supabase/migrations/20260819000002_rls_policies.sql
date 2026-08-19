@@ -8,9 +8,6 @@
 --
 -- Rules followed by every policy below, and by every table added later:
 --
---   • RLS is enabled AND forced. Without `force`, the table owner bypasses it,
---     which quietly defeats the policies for anything running as that role.
---
 --   • Both USING and WITH CHECK are set on writes. USING decides which rows
 --     you may act on; WITH CHECK decides what the row may look like afterwards.
 --     Setting only USING lets a user hand their row to someone else by
@@ -18,12 +15,23 @@
 --
 --   • No policy grants access to `anon`. Everything requires an authenticated
 --     session.
+--
+--   • RLS is ENABLED but deliberately NOT FORCED. `force` makes the table
+--     owner subject to policies too, which sounds stricter but breaks the
+--     `handle_new_user` SECURITY DEFINER trigger: it runs as the table owner
+--     with no JWT, so `auth.uid()` is null and no policy matches. Verified
+--     against PostgreSQL 16 — with `force` the trigger's insert fails with
+--     "new row violates row-level security policy", and signup dies with it.
+--
+--     Nothing is lost. Only the table owner is affected by `force`, and the
+--     owner is an administrative role that never serves API traffic. The
+--     roles that do — `anon` and `authenticated` — own nothing, so policies
+--     always apply to them either way. `supabase/tests/rls.test.sql` proves
+--     that empirically rather than by assertion.
 -- ===========================================================================
 
-alter table public.profiles       enable row level security;
-alter table public.profiles       force  row level security;
-alter table public.user_settings  enable row level security;
-alter table public.user_settings  force  row level security;
+alter table public.profiles      enable row level security;
+alter table public.user_settings enable row level security;
 
 -- ------------------------------------------------------------------ profiles
 
