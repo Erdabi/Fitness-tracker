@@ -401,12 +401,12 @@
 <header class="mast">
   <div class="eyebrow">Architecture Proposal · Erdabi/Fitness-tracker</div>
   <h1>Fitness&nbsp;Tracker<br>Architecture</h1>
-  <p class="standfirst">A production architecture for a cross-platform nutrition, hydration and training tracker with AI label extraction and meal-photo estimation. This document covers the ten items you asked for, plus the requirements the spec is missing. No implementation code yet — four decisions need your call first.</p>
+  <p class="standfirst">A production architecture for a cross-platform nutrition, hydration and training tracker with AI label extraction and meal-photo estimation. This document covers the ten items you asked for, plus the requirements the spec is missing. The four open platform decisions are now settled — see §10.</p>
   <div class="bar-heavy"></div>
   <div class="meta-strip">
     <span>Repo <b>Erdabi/Fitness-tracker</b></span>
     <span>Branch <b>claude/github-repo-connection-98d22n</b></span>
-    <span>Status <b>Awaiting approval</b></span>
+    <span>Status <b>Decisions locked · Phase 0 not started</b></span>
     <span>Date <b>2026-08-19</b></span>
   </div>
   <div class="bar-mid"></div>
@@ -526,7 +526,7 @@
     <tbody>
       <tr><td>App framework</td><td><b>Expo SDK 54+</b> (React Native, TypeScript strict)</td><td>Managed native modules, EAS Build, OTA updates for JS-only fixes. Camera and barcode scanning require a <b>development build</b> — Expo Go won't work past week one, so set that up on day one.</td></tr>
       <tr><td>Routing</td><td><b>Expo Router</b> (file-based)</td><td>Typed routes, deep links for free, layout-based tab/modal composition. Deep links matter later for notification taps.</td></tr>
-      <tr><td>Backend</td><td><b>Supabase</b> — Postgres, Auth, Storage, Edge Functions</td><td>You need a real normalized Postgres plus row-level security plus a server-side place to hold AI keys. Supabase gives all four without running infrastructure. A custom Node/Fastify + Prisma backend is more flexible but adds ops you don't need yet. <span class="chip ask">Your call — §10</span></td></tr>
+      <tr><td>Backend</td><td><b>Supabase</b> — Postgres, Auth, Storage, Edge Functions</td><td>You need a real normalized Postgres plus row-level security plus a server-side place to hold AI keys. Supabase gives all four without running infrastructure. A custom Node/Fastify + Prisma backend is more flexible but adds ops you don't need yet. <span class="chip ok">Confirmed</span></td></tr>
       <tr><td>On-device DB</td><td><b>SQLite</b> (<code>expo-sqlite</code>) + <b>Drizzle ORM</b></td><td>The device is the source of truth; the server is the sync target. Same schema language on both sides, real migrations, and typed queries. Also lets the app ship with a seeded food + exercise database so search works on first launch, offline.</td></tr>
       <tr><td>Server state</td><td><b>TanStack Query</b></td><td>Sits over the local DB reads and the sync layer; gives caching, invalidation and optimistic updates without hand-rolled reducers.</td></tr>
       <tr><td>Client state</td><td><b>Zustand</b></td><td>Only for genuinely ephemeral state: the in-progress workout, the scanner session, the rest timer. Redux is overkill when the durable state lives in SQLite.</td></tr>
@@ -1074,33 +1074,33 @@ e2e/               Maestro flows</pre>
 
 <!-- ══════════════════════════════════════ 10 ══════════════════════════════════════ -->
 <section id="decisions">
-  <div class="sec-head"><span class="sec-num">10</span><h2>Four decisions I need from you</h2></div>
+  <div class="sec-head"><span class="sec-num">10</span><h2>Platform decisions — settled</h2></div>
 
   <div class="prose">
-    <p>Everything above is settled apart from these. Each one changes code that's expensive to rewrite later, and I can't pick them for you from the spec alone.</p>
+    <p>These four were the open questions; all are now resolved, and each carries a consequence the build has to honour.</p>
   </div>
 
   <div class="grid two">
-    <div class="card stop">
-      <h4>A · Backend platform <span class="chip ask">Blocking</span></h4>
-      <p><b>Supabase</b> (my recommendation) — Postgres, auth, storage, RLS and Edge Functions with no infrastructure to run. Versus a <b>custom Node/Fastify + Prisma</b> backend on your own host: more control, portable, but you own auth, deployment, scaling and monitoring.</p>
+    <div class="card good">
+      <h4>A · Backend <span class="chip ok">Supabase</span></h4>
+      <p>Postgres, Auth, Storage and Edge Functions. Consequence: <b>RLS is the security boundary</b>, so every migration ships with its policies and a test that proves user A cannot read user B's rows.</p>
     </div>
-    <div class="card stop">
-      <h4>B · Food data source <span class="chip ask">Blocking</span></h4>
-      <p><b>USDA FoodData Central + Open Food Facts</b> (my recommendation) — free, strong EU barcode coverage, but ODbL means attribution and share-alike obligations. Versus a <b>commercial API</b> (Nutritionix / Edamam): cleaner data, monthly cost, no redistribution rights. Versus <b>curated seed only</b>: fastest to ship, no barcode coverage.</p>
+    <div class="card good">
+      <h4>B · Food data <span class="chip ok">USDA + Open Food Facts</span></h4>
+      <p>Consequence: Open Food Facts is <b>ODbL</b>. The <code>foods.license</code> column is mandatory, in-app attribution is required, and derived database shares carry share-alike. USDA rows are public domain and unencumbered.</p>
     </div>
-    <div class="card stop">
-      <h4>C · Offline depth <span class="chip ask">Blocking</span></h4>
-      <p><b>Full offline-first from day one</b> (my recommendation) — SQLite as source of truth with a sync engine. Costs roughly a week up front and is very hard to retrofit. Versus <b>online-first with cached reads</b>: faster to a demo, but logging fails without signal, and converting later touches every screen.</p>
+    <div class="card good">
+      <h4>C · Offline <span class="chip ok">Offline-first</span></h4>
+      <p>SQLite is the source of truth; the server is a sync target. Consequence: <b>every table needs client-generated UUIDs, <code>updated_at</code> and soft deletes from the first migration</b>, and the UI reads only from the local database.</p>
     </div>
-    <div class="card stop">
-      <h4>D · AI provider <span class="chip ask">Blocking</span></h4>
-      <p>Which vendor sits behind <code>AIProvider</code> first. The abstraction means this is swappable, but the first implementation, the prompt work and the eval baseline all get built against one. Tell me which account you already have, or I'll assume Claude.</p>
+    <div class="card good">
+      <h4>D · AI provider <span class="chip ok">Claude</span></h4>
+      <p>Behind the <code>AIProvider</code> interface, so it stays swappable. Opus 5 for both tasks to set the accuracy ceiling, then measure Haiku 4.5 on labels at roughly a fifth of the cost. Structured outputs via <code>output_config.format</code>, Zod-validated server-side.</p>
     </div>
   </div>
 
   <div class="note">
-    Nothing else is waiting on you. Once these four are answered I'll start at Phase 0 and work through in order, explaining each piece as I build it and committing to <code>claude/github-repo-connection-98d22n</code> — no implementation code before then.
+    <strong>Still open, but not blocking:</strong> whether exercise calories add back to the daily budget (shipping as a setting, default off), the free/premium boundary, and launch languages. Each can be answered during the phase that needs it.
   </div>
 </section>
 
