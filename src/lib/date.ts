@@ -122,6 +122,16 @@ function timeZoneOffsetMs(instant: Date, timeZone: string): number {
   return asUtc - instant.getTime();
 }
 
+/** The hour of the day (0–23) that `instant` falls on in `timeZone`. */
+export function localHourFor(instant: Date, timeZone: string): number {
+  const formatted = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    hourCycle: 'h23',
+  }).format(instant);
+  return Number(formatted);
+}
+
 /**
  * The device's current timezone, falling back to UTC when unavailable.
  * Kept here so the fallback is defined in exactly one place.
@@ -132,4 +142,23 @@ export function resolveDeviceTimeZone(): string {
   } catch {
     return 'UTC';
   }
+}
+
+/**
+ * An instant that is guaranteed to fall inside `day` in `timeZone`.
+ *
+ * Needed when a user logs food onto a day other than today: the diary date is
+ * the local day of the entry's instant, so moving the entry means moving the
+ * instant, and "yesterday at the current time of day" is both arbitrary and
+ * wrong for a meal.
+ *
+ * Midday rather than midnight. Midnight is the one local time that can fail to
+ * exist (spring-forward zones skip it in a handful of places) and the one that
+ * lands one second from the neighbouring day; noon has twelve hours of margin
+ * on either side, which no DST shift comes close to. Twelve hours after the
+ * start of the day is 11:00, 12:00 or 13:00 local depending on the transition,
+ * and all three are unambiguously inside it.
+ */
+export function middayOfLocalDay(day: LocalDay, timeZone: string): Date {
+  return new Date(startOfLocalDay(day, timeZone).getTime() + 12 * 60 * 60 * 1000);
 }

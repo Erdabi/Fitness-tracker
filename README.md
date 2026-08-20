@@ -133,6 +133,8 @@ src/
   features/
     ai/                 AIProvider interface + Zod schemas (Phase 4)
     auth/               Session state, auth operations, error mapping
+    diary/              The day view, logging, editing, frequent foods
+    food/               Search, food detail, serving selection
     profile/            Profile reads and writes
   lib/                  Dates, units, ids, Result type, logging
   state/                React Query client
@@ -140,15 +142,19 @@ src/
   theme/                Tokens and theme provider
 supabase/migrations/    Postgres schema — the source of truth
 docs/architecture.html  Full architecture and roadmap
+docs/food-search.md     Ranking, matching, pagination, search performance
+docs/food-diary.md      The snapshot invariant, diary dates, aggregation
+docs/food-data-sources.md  Sources, licensing, import procedure
+docs/database-setup.md  Applying migrations to a Supabase project
 ```
 
 Two rules keep this from rotting:
 
 1. **Features do not import from each other.** Shared logic moves down into
    `lib/` or `components/ui/`.
-2. **Nutrition maths will live in exactly one place** (`lib/nutrition`, Phase 1)
-   and be imported by the diary, recipes, AI confirm screens and dashboard
-   alike.
+2. **Nutrition maths lives in exactly one place** (`lib/nutrition`), imported by
+   the diary, the serving selector and — as they arrive — recipes, AI confirm
+   screens and the dashboard alike.
 
 ---
 

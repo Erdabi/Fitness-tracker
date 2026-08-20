@@ -11,6 +11,11 @@ import type { AnyRow, RemoteTable } from '../types';
  *     real trigger exists to prevent.
  *   • Rows are scoped to their owner, so a pull cannot see another user's data.
  *   • The network can be down, and requests can fail individually.
+ *   • Generated columns are computed by the server, not accepted from the
+ *     client. A fake that stored whatever it was handed would let a client
+ *     that stopped sending totals look fine here and lose every calorie in
+ *     production, which is precisely the bug the real GENERATED columns exist
+ *     to make impossible.
  */
 export interface FakeRemote extends RemoteAdapter {
   /** Fails every request until `goOnline()`, like a device with no signal. */
@@ -51,6 +56,37 @@ export function createFakeRemote(options: { startAt?: number } = {}): FakeRemote
     if (!online) throw new Error('Network request failed');
   };
 
+  /**
+   * Mirrors the GENERATED columns on public.food_logs.
+   *
+   * Kept in step with supabase/migrations/20260822000001_food_logs.sql: the
+   * totals are the frozen basis scaled by the logged portion, and a null basis
+   * value stays null all the way through.
+   */
+  const applyGenerated = (table: RemoteTable, row: AnyRow): AnyRow => {
+    if (table !== 'food_logs') return row;
+
+    const number = (value: unknown): number => Number(value ?? 0);
+    const factor =
+      (number(row.quantity) * number(row.serving_amount)) / number(row.basis_amount);
+
+    const scale = (value: unknown): number | null =>
+      value === null || value === undefined ? null : Number(value) * factor;
+
+    return {
+      ...row,
+      amount_in_base: number(row.quantity) * number(row.serving_amount),
+      calories: scale(row.basis_calories),
+      protein_g: scale(row.basis_protein_g),
+      carbohydrates_g: scale(row.basis_carbohydrates_g),
+      fat_g: scale(row.basis_fat_g),
+      fiber_g: scale(row.basis_fiber_g),
+      sugar_g: scale(row.basis_sugar_g),
+      saturated_fat_g: scale(row.basis_saturated_fat_g),
+      sodium_mg: scale(row.basis_sodium_mg),
+    };
+  };
+
   return {
     stats,
 
@@ -66,7 +102,10 @@ export function createFakeRemote(options: { startAt?: number } = {}): FakeRemote
 
     seed(table, row) {
       const id = String(row.id);
-      tableOf(table).set(id, { ...row, updated_at: row.updated_at ?? stamp() });
+      tableOf(table).set(
+        id,
+        applyGenerated(table, { ...row, updated_at: row.updated_at ?? stamp() }),
+      );
     },
 
     rows(table) {
@@ -108,7 +147,10 @@ export function createFakeRemote(options: { startAt?: number } = {}): FakeRemote
       const existing = tableOf(table).get(id);
       // `updated_at` is server-assigned; a client-supplied value is discarded,
       // mirroring the set_updated_at trigger.
-      tableOf(table).set(id, { ...existing, ...row, updated_at: stamp() });
+      tableOf(table).set(
+        id,
+        applyGenerated(table, { ...existing, ...row, updated_at: stamp() }),
+      );
       return null;
     },
 

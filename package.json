@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "jest",
     "test:watch": "jest --watch",
+    "bench:diary": "tsx --tsconfig scripts/tsconfig.bench.json scripts/benchmark-diary.ts",
     "db:push": "supabase db push",
     "db:reset": "supabase db reset",
     "verify": "npm run typecheck && npm run lint && npm run test"

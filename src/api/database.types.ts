@@ -335,6 +335,113 @@ export interface Database {
           },
         ];
       };
+      food_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          food_id: string | null;
+          serving_id: string | null;
+          meal: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+          logged_at: string;
+          time_zone: string;
+          /** `YYYY-MM-DD` in `time_zone`. Never a UTC truncation. */
+          diary_date: string;
+          quantity: number | string;
+          serving_label: string;
+          serving_amount: number | string;
+          /** Generated. */
+          amount_in_base: number | string;
+          food_name: string;
+          brand_name: string | null;
+          food_source_id: string;
+          food_is_verified: boolean;
+          basis_unit: 'g' | 'ml' | 'item';
+          basis_amount: number | string;
+          basis_calories: number | string;
+          basis_protein_g: number | string;
+          basis_carbohydrates_g: number | string;
+          basis_fat_g: number | string;
+          basis_fiber_g: number | string | null;
+          basis_sugar_g: number | string | null;
+          basis_saturated_fat_g: number | string | null;
+          basis_sodium_mg: number | string | null;
+          /** Generated from the basis and the portion; never client-supplied. */
+          calories: number | string;
+          protein_g: number | string;
+          carbohydrates_g: number | string;
+          fat_g: number | string;
+          fiber_g: number | string | null;
+          sugar_g: number | string | null;
+          saturated_fat_g: number | string | null;
+          sodium_mg: number | string | null;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        /*
+         * The generated columns are absent by construction: Postgres rejects a
+         * supplied value for them, which is what stops any client from writing
+         * a total that contradicts its own basis.
+         */
+        Insert: {
+          id?: string;
+          user_id: string;
+          food_id?: string | null;
+          serving_id?: string | null;
+          meal: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+          logged_at?: string;
+          time_zone: string;
+          /** Optional: derived from `logged_at` in `time_zone` when omitted. */
+          diary_date?: string | null;
+          quantity: number;
+          serving_label: string;
+          serving_amount: number;
+          food_name: string;
+          brand_name?: string | null;
+          food_source_id: string;
+          food_is_verified?: boolean;
+          basis_unit: 'g' | 'ml' | 'item';
+          basis_amount: number;
+          basis_calories: number;
+          basis_protein_g?: number;
+          basis_carbohydrates_g?: number;
+          basis_fat_g?: number;
+          basis_fiber_g?: number | null;
+          basis_sugar_g?: number | null;
+          basis_saturated_fat_g?: number | null;
+          basis_sodium_mg?: number | null;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        /* The snapshot columns are absent here too: a trigger refuses them. */
+        Update: {
+          meal?: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+          logged_at?: string;
+          time_zone?: string;
+          diary_date?: string | null;
+          quantity?: number;
+          serving_label?: string;
+          serving_amount?: number;
+          serving_id?: string | null;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'food_logs_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'food_logs_food_id_fkey';
+            columns: ['food_id'];
+            referencedRelation: 'foods';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: Record<never, never>;
     Functions: {
@@ -366,6 +473,7 @@ export interface Database {
       sex: 'male' | 'female' | 'other';
       unit_system: 'metric' | 'imperial';
       theme_pref: 'light' | 'dark' | 'system';
+      meal_slot: 'breakfast' | 'lunch' | 'dinner' | 'snack';
     };
     CompositeTypes: Record<never, never>;
   };

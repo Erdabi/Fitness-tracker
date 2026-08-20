@@ -181,6 +181,102 @@ export const MIGRATIONS: readonly Migration[] = [
          ON food_cache_servings(food_id, sort_order)`,
     ],
   },
+
+  {
+    version: 3,
+    name: 'food_logs',
+    statements: [
+      /*
+       * The diary.
+       *
+       * Mirrors public.food_logs, with two deliberate differences.
+       *
+       *   • The `basis_*` columns are the frozen nutrition snapshot; the
+       *     unprefixed nutrient columns are that basis scaled to the logged
+       *     quantity. Postgres computes those as GENERATED columns so no
+       *     client can post a total that contradicts its own basis. SQLite
+       *     could do the same, but the sync engine writes every column it is
+       *     given, and a generated column cannot be written — so locally they
+       *     are ordinary columns filled by `scaleNutrition`, the one
+       *     arithmetic path the whole app shares.
+       *
+       *   • `diary_date` is a `YYYY-MM-DD` string, not a date type. It is the
+       *     user's calendar day, computed at write time in their zone, and it
+       *     never changes afterwards — not when they travel, and not when the
+       *     device's zone changes underneath them.
+       */
+      `CREATE TABLE food_logs (
+         id                    TEXT    PRIMARY KEY NOT NULL,
+         user_id               TEXT    NOT NULL,
+
+         -- Provenance only. Nullable, because a log outlives the catalogue
+         -- row it came from; the snapshot below is what renders it.
+         food_id               TEXT,
+         serving_id            TEXT,
+
+         meal                  TEXT    NOT NULL
+                                       CHECK (meal IN ('breakfast', 'lunch', 'dinner', 'snack')),
+
+         logged_at             INTEGER NOT NULL,
+         time_zone             TEXT    NOT NULL,
+         diary_date            TEXT    NOT NULL
+                                       CHECK (diary_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+
+         quantity              REAL    NOT NULL CHECK (quantity > 0),
+         serving_label         TEXT    NOT NULL,
+         serving_amount        REAL    NOT NULL CHECK (serving_amount > 0),
+         amount_in_base        REAL    NOT NULL CHECK (amount_in_base > 0),
+
+         food_name             TEXT    NOT NULL,
+         brand_name            TEXT,
+         food_source_id        TEXT    NOT NULL,
+         food_is_verified      INTEGER NOT NULL DEFAULT 0
+                                       CHECK (food_is_verified IN (0, 1)),
+
+         basis_unit            TEXT    NOT NULL CHECK (basis_unit IN ('g', 'ml', 'item')),
+         basis_amount          REAL    NOT NULL CHECK (basis_amount > 0),
+         basis_calories        REAL    NOT NULL CHECK (basis_calories >= 0),
+         basis_protein_g       REAL    NOT NULL DEFAULT 0,
+         basis_carbohydrates_g REAL    NOT NULL DEFAULT 0,
+         basis_fat_g           REAL    NOT NULL DEFAULT 0,
+         basis_fiber_g         REAL,
+         basis_sugar_g         REAL,
+         basis_saturated_fat_g REAL,
+         basis_sodium_mg       REAL,
+
+         calories              REAL    NOT NULL,
+         protein_g             REAL    NOT NULL,
+         carbohydrates_g       REAL    NOT NULL,
+         fat_g                 REAL    NOT NULL,
+         fiber_g               REAL,
+         sugar_g               REAL,
+         saturated_fat_g       REAL,
+         sodium_mg             REAL,
+
+         note                  TEXT,
+
+         created_at            INTEGER NOT NULL,
+         updated_at            INTEGER NOT NULL,
+         server_updated_at     TEXT,
+         deleted_at            INTEGER
+       )`,
+
+      /*
+       * The diary read and the daily rollup are one access pattern: one user,
+       * one day, ordered by meal. Covering the summed columns keeps a day's
+       * totals off the table itself, which is what holds the cost flat as
+       * years of history accumulate on the device.
+       */
+      `CREATE INDEX idx_food_logs_day
+         ON food_logs(user_id, diary_date, meal, logged_at)
+         WHERE deleted_at IS NULL`,
+
+      // "What do I log most often lately" — the windowed frequent-foods query.
+      `CREATE INDEX idx_food_logs_frequent
+         ON food_logs(user_id, diary_date, food_id)
+         WHERE deleted_at IS NULL AND food_id IS NOT NULL`,
+    ],
+  },
 ];
 
 /** Highest migration version known to this build. */

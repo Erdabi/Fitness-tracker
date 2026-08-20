@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 
 import { Text, TextField } from '@/components/ui';
@@ -49,11 +49,18 @@ export function ServingSelector({
     return nutritionFor(nutrition, food, quantity, selected);
   }, [isValidQuantity, nutrition, food, quantity, selected]);
 
-  function select(index: number): void {
-    setSelectedIndex(index);
-    const option = options[index];
-    if (option && isValidQuantity) onChange?.({ quantity, serving: option });
-  }
+  /*
+   * Report the current selection whenever it is valid — including on mount.
+   *
+   * Reporting only from the tap handlers would leave the caller with nothing
+   * until the user touched something, so a screen whose defaults are already
+   * correct ("1 × 100 g") would have no selection to log. Deriving it from
+   * state instead of from events means there is one answer, and it is the one
+   * on screen.
+   */
+  useEffect(() => {
+    if (isValidQuantity) onChange?.({ quantity, serving: selected });
+  }, [isValidQuantity, quantity, selected, onChange]);
 
   return (
     <View style={{ gap: theme.spacing.lg }}>
@@ -74,7 +81,7 @@ export function ServingSelector({
                 accessibilityRole="radio"
                 accessibilityState={{ selected: active }}
                 accessibilityLabel={`${option.label}, ${option.amount} ${option.unit}`}
-                onPress={() => select(index)}
+                onPress={() => setSelectedIndex(index)}
                 style={{
                   paddingVertical: theme.spacing.sm,
                   paddingHorizontal: theme.spacing.md,
@@ -102,13 +109,7 @@ export function ServingSelector({
       <TextField
         label="Quantity"
         value={quantityText}
-        onChangeText={(text) => {
-          setQuantityText(text);
-          const next = Number(text.replace(',', '.'));
-          if (Number.isFinite(next) && next > 0) {
-            onChange?.({ quantity: next, serving: selected });
-          }
-        }}
+        onChangeText={setQuantityText}
         keyboardType="decimal-pad"
         error={quantityText.length > 0 && !isValidQuantity ? 'Enter a number above zero' : undefined}
         hint={`× ${selected.label}`}

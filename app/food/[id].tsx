@@ -1,31 +1,55 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from 'react-native';
 
 import { Button, ErrorState, LoadingState, Screen, Text } from '@/components/ui';
 import { cacheFood, recordFoodUse } from '@/db/repositories/foodRecents';
 import { getDatabase } from '@/db/client';
+import type { MealSlot } from '@/db/schema';
 import { useAuth } from '@/features/auth/AuthProvider';
+import { MealPicker, defaultMealFor } from '@/features/diary/MealPicker';
+import { describeDay } from '@/features/diary/DayNavigator';
+import { useDiaryMutations, useDiaryTimeZone, useToday } from '@/features/diary/useDiary';
 import { ServingSelector } from '@/features/food/ServingSelector';
 import { getFoodDetail, type FoodDetail } from '@/features/food/foodDetailService';
-import type { Serving } from '@/lib/nutrition';
+import { isLocalDay, type LocalDay } from '@/lib/date';
+import { servingOptions, type Serving } from '@/lib/nutrition';
 import type { AppError } from '@/lib/result';
 import { logger } from '@/lib/logger';
 import { useTheme } from '@/theme';
 
 /**
- * Food detail and serving selection.
+ * Food detail, serving selection and logging.
  *
- * The screen a search result opens into. Picking a portion here is the last
- * step before logging, which arrives with the diary in the next milestone —
- * for now selecting a food records it as recently used and caches it, which
- * is what makes it available offline next time.
+ * The last step before an entry exists. Every number on screen is computed by
+ * `ServingSelector` from the food's canonical values, and the same quantity
+ * and portion are handed to `logFood` — so what the user confirmed is exactly
+ * what gets written, rather than being recomputed on the way in.
  */
 export default function FoodDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, meal: mealParam, day: dayParam } = useLocalSearchParams<{
+    id: string;
+    meal?: string;
+    day?: string;
+  }>();
   const theme = useTheme();
   const router = useRouter();
   const { userId } = useAuth();
+  const timeZone = useDiaryTimeZone();
+  const today = useToday();
+  const { logFood } = useDiaryMutations();
+
+  // The meal and day the diary sent us, when it sent any. Otherwise: today,
+  // and whichever meal the clock suggests.
+  const targetDay: LocalDay =
+    dayParam && isLocalDay(dayParam) ? dayParam : today;
+  const initialMeal = useMemo<MealSlot>(
+    () => asMeal(mealParam) ?? defaultMealFor(new Date(), timeZone),
+    [mealParam, timeZone],
+  );
+
+  const [meal, setMeal] = useState<MealSlot>(initialMeal);
+  const [isSaving, setIsSaving] = useState(false);
 
   const [detail, setDetail] = useState<FoodDetail | null>(null);
   const [error, setError] = useState<AppError | null>(null);
@@ -83,6 +107,22 @@ export default function FoodDetailScreen() {
 
   const { food, nutrition, servings, origin } = detail;
 
+  /*
+   * The selector reports its state on mount, so `selection` is set before the
+   * user can press anything. The fallback covers the single render before that
+   * lands, and it is the selector's own default — the food's first portion —
+   * rather than a bare quantity, which would mean "1 gram".
+   */
+  const chosen =
+    selection ??
+    {
+      quantity: 1,
+      serving: servingOptions(
+        { baseUnit: food.baseUnit, baseAmount: food.baseAmount },
+        servings,
+      )[0]!,
+    };
+
   return (
     <Screen scrollable keyboardAvoiding>
       <View style={{ gap: theme.spacing.xs, marginTop: theme.spacing.lg }}>
@@ -110,41 +150,76 @@ export default function FoodDetailScreen() {
         onChange={setSelection}
       />
 
-      <View style={{ flex: 1 }} />
+      <View style={{ marginTop: theme.spacing.lg }}>
+        <MealPicker value={meal} onChange={setMeal} />
+      </View>
 
-      {/*
-        Logging lands with the diary. The button is present but honest about
-        that rather than silently doing nothing — a control that looks live and
-        is not is worse than one that says so.
-      */}
+      <View style={{ flex: 1, minHeight: theme.spacing.lg }} />
+
       <Button
-        label="Add to diary"
-        disabled
+        label={`Add to ${describeDay(targetDay, today).toLowerCase()}`}
+        loading={isSaving}
         onPress={() => {
-          /* Diary arrives in the next milestone. */
+          if (!userId || isSaving) return;
+          setIsSaving(true);
+
+          try {
+            logFood({
+              meal,
+              food: {
+                foodId: food.foodId,
+                name: food.name,
+                brandName: food.brandName,
+                sourceId: food.sourceId,
+                isVerified: food.isVerified,
+                baseUnit: food.baseUnit,
+                baseAmount: food.baseAmount,
+              },
+              // Snapshotted as the entry's basis. Nothing downstream reads
+              // this food again.
+              nutrition,
+              quantity: chosen.quantity,
+              serving: chosen.serving,
+              servingId: chosen.serving?.id ?? null,
+              timeZone,
+              diaryDate: targetDay,
+            });
+
+            // Logging is a use. Recording it here rather than inside the diary
+            // keeps "what I reach for" about the catalogue, and leaves the
+            // diary free of a second write path.
+            recordFoodUse({ userId, foodId: food.foodId }, getDatabase());
+            router.back();
+          } catch (cause) {
+            setIsSaving(false);
+            logger.error('Could not log food', {
+              reason: cause instanceof Error ? cause.message : 'unknown',
+            });
+          }
         }}
       />
+
       <Text variant="caption" color="muted" align="center">
-        The food diary arrives in the next milestone.
+        {summarise(chosen, food)}
       </Text>
-
-      <Button
-        label="Save to recents"
-        variant="secondary"
-        onPress={() => {
-          if (!userId) return;
-          recordFoodUse({ userId, foodId: food.foodId }, getDatabase());
-          router.back();
-        }}
-      />
-
-      {selection ? (
-        <Text variant="caption" color="muted" align="center">
-          {selection.quantity} × {selection.serving?.label ?? `${food.baseAmount} ${food.baseUnit}`}
-        </Text>
-      ) : null}
     </Screen>
   );
+}
+
+function asMeal(value: string | undefined): MealSlot | null {
+  return value === 'breakfast' || value === 'lunch' || value === 'dinner' || value === 'snack'
+    ? value
+    : null;
+}
+
+/** Restates what is about to be written, in the user's own terms. */
+function summarise(
+  chosen: { quantity: number; serving: Serving | null },
+  food: FoodDetail['food'],
+): string {
+  return chosen.serving
+    ? `${chosen.quantity} × ${chosen.serving.label}`
+    : `${chosen.quantity} × ${food.baseAmount} ${food.baseUnit}`;
 }
 
 /** States where a number came from, only when it changes how to read it. */

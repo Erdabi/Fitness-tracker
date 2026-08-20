@@ -14,6 +14,15 @@ import type { SyncColumns } from './types';
 export type Sex = 'male' | 'female' | 'other';
 export type UnitSystemValue = 'metric' | 'imperial';
 export type ThemeValue = 'light' | 'dark' | 'system';
+export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+
+/** Meals in the order a day happens, which is also the order they render. */
+export const MEAL_SLOTS: readonly MealSlot[] = [
+  'breakfast',
+  'lunch',
+  'dinner',
+  'snack',
+];
 
 export interface ProfileRow extends SyncColumns {
   id: string;
@@ -46,6 +55,67 @@ export interface FoodRecentRow extends SyncColumns {
   /** Epoch ms. */
   last_used_at: number;
   use_count: number;
+  created_at: number;
+}
+
+/**
+ * One logged item.
+ *
+ * The `basis_*` columns are a frozen copy of the food's nutrition per
+ * `basis_amount` of `basis_unit`, taken at the moment of logging. The
+ * unprefixed nutrient columns are that basis scaled to what was actually
+ * eaten. Nothing here is read back from the catalogue, which is what makes a
+ * historical entry immune to a food being corrected, renamed or deleted.
+ */
+export interface FoodLogRow extends SyncColumns {
+  id: string;
+  user_id: string;
+  /** Provenance only, and null once the catalogue row is gone. */
+  food_id: string | null;
+  serving_id: string | null;
+  meal: MealSlot;
+
+  /** Epoch ms. The instant the food was eaten. */
+  logged_at: number;
+  /** IANA zone the entry was made in, kept so its date can be explained. */
+  time_zone: string;
+  /** `YYYY-MM-DD` in `time_zone`. Never a UTC truncation. */
+  diary_date: string;
+
+  quantity: number;
+  serving_label: string;
+  /** The portion's size in `basis_unit`; 1 when logging raw base units. */
+  serving_amount: number;
+  /** `quantity * serving_amount`, the only number the arithmetic uses. */
+  amount_in_base: number;
+
+  food_name: string;
+  brand_name: string | null;
+  food_source_id: string;
+  /** 0 or 1. Whether the data was verified *when this was logged*. */
+  food_is_verified: number;
+
+  basis_unit: 'g' | 'ml' | 'item';
+  basis_amount: number;
+  basis_calories: number;
+  basis_protein_g: number;
+  basis_carbohydrates_g: number;
+  basis_fat_g: number;
+  basis_fiber_g: number | null;
+  basis_sugar_g: number | null;
+  basis_saturated_fat_g: number | null;
+  basis_sodium_mg: number | null;
+
+  calories: number;
+  protein_g: number;
+  carbohydrates_g: number;
+  fat_g: number;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  saturated_fat_g: number | null;
+  sodium_mg: number | null;
+
+  note: string | null;
   created_at: number;
 }
 
@@ -165,5 +235,46 @@ export const TABLE_COLUMNS = {
     'unit',
     'is_default',
     'sort_order',
+  ],
+  food_logs: [
+    'id',
+    'user_id',
+    'food_id',
+    'serving_id',
+    'meal',
+    'logged_at',
+    'time_zone',
+    'diary_date',
+    'quantity',
+    'serving_label',
+    'serving_amount',
+    'amount_in_base',
+    'food_name',
+    'brand_name',
+    'food_source_id',
+    'food_is_verified',
+    'basis_unit',
+    'basis_amount',
+    'basis_calories',
+    'basis_protein_g',
+    'basis_carbohydrates_g',
+    'basis_fat_g',
+    'basis_fiber_g',
+    'basis_sugar_g',
+    'basis_saturated_fat_g',
+    'basis_sodium_mg',
+    'calories',
+    'protein_g',
+    'carbohydrates_g',
+    'fat_g',
+    'fiber_g',
+    'sugar_g',
+    'saturated_fat_g',
+    'sodium_mg',
+    'note',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
   ],
 } as const satisfies Record<string, readonly string[]>;

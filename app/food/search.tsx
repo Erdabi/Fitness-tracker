@@ -1,5 +1,5 @@
 import { FlashList } from '@shopify/flash-list';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 
@@ -15,10 +15,16 @@ import { useTheme } from '@/theme';
  * Built for repetition: most logging is the same twenty foods, so the screen
  * opens straight into recents and typing is the exception rather than the
  * entry point.
+ *
+ * `meal` and `day` ride through from the diary so that picking a food finishes
+ * the job the user started — "add lunch to Tuesday" stays "lunch on Tuesday"
+ * all the way to the entry, instead of dropping them on a screen that asks
+ * again.
  */
 export default function FoodSearchScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const { meal, day } = useLocalSearchParams<{ meal?: string; day?: string }>();
   const {
     query,
     results,
@@ -34,9 +40,12 @@ export default function FoodSearchScreen() {
 
   const handleSelect = useCallback(
     (result: FoodSearchResult) => {
-      router.push({ pathname: '/food/[id]', params: { id: result.foodId } });
+      router.push({
+        pathname: '/food/[id]',
+        params: { id: result.foodId, ...(meal ? { meal } : {}), ...(day ? { day } : {}) },
+      });
     },
-    [router],
+    [router, meal, day],
   );
 
   const renderItem = useCallback(

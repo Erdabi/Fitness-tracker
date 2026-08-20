@@ -70,6 +70,7 @@ export function clearLocalUserData(db: SqlDatabase = getDatabase()): void {
   db.transaction(() => {
     db.exec('DELETE FROM sync_outbox');
     db.exec('DELETE FROM sync_state');
+    db.exec('DELETE FROM food_logs');
     db.exec('DELETE FROM food_recents');
     // The cache holds catalogue data rather than personal data, but it still
     // reveals what the previous user ate. Two people can share a phone.

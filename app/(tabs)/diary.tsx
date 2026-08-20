@@ -1,36 +1,120 @@
 import { useRouter } from 'expo-router';
+import { useState } from 'react';
 import { View } from 'react-native';
 
-import { Button, Screen, Text } from '@/components/ui';
+import { EmptyState, LoadingState, Screen, Text } from '@/components/ui';
+import { MEAL_SLOTS, type FoodLogRow, type MealSlot } from '@/db/schema';
+import { DayNavigator } from '@/features/diary/DayNavigator';
+import { DayTotalsBar } from '@/features/diary/DayTotalsBar';
+import { FrequentStrip } from '@/features/diary/FrequentStrip';
+import { defaultMealFor } from '@/features/diary/MealPicker';
+import { MealSection } from '@/features/diary/MealSection';
+import { SyncNotice } from '@/features/diary/SyncNotice';
+import {
+  useDiaryDay,
+  useDiaryMutations,
+  useDiaryTimeZone,
+  useFrequentFoods,
+  useToday,
+} from '@/features/diary/useDiary';
+import { useSyncStatus } from '@/sync/useSyncStatus';
+import type { LocalDay } from '@/lib/date';
 import { useTheme } from '@/theme';
 
 /**
- * Diary tab.
+ * The day view.
  *
- * The day view itself arrives in the next milestone. Until then this is the
- * way into food search, which is complete and usable — rather than a
- * placeholder that hides working functionality behind a "coming soon".
+ * Reads entirely from SQLite, so it renders instantly and works with the radio
+ * off. What sync is doing appears as a note rather than a blocker — an entry
+ * is in the diary the moment it is written, whatever the network is doing.
  */
 export default function DiaryScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const today = useToday();
+  const [day, setDay] = useState<LocalDay>(today);
+
+  const { entries, totals, isLoading } = useDiaryDay(day);
+  const { foods: frequent } = useFrequentFoods();
+  const { repeatEntry } = useDiaryMutations();
+  const timeZone = useDiaryTimeZone();
+  const syncStatus = useSyncStatus();
+
+  function addTo(meal: MealSlot): void {
+    router.push({ pathname: '/food/search', params: { meal, day } });
+  }
+
+  function open(entry: FoodLogRow): void {
+    router.push({ pathname: '/diary/[id]', params: { id: entry.id } });
+  }
 
   return (
-    <Screen>
-      <View style={{ flex: 1, justifyContent: 'center', gap: theme.spacing.md }}>
-        <Text variant="overline" color="accent">
-          Phase 1
-        </Text>
-        <Text variant="displayMedium">Diary</Text>
-        <Text variant="body" color="secondary">
-          Meals, running totals and editing land in the next milestone. Food
-          search works now — try it out.
-        </Text>
-
-        <View style={{ marginTop: theme.spacing.lg }}>
-          <Button label="Search foods" onPress={() => router.push('/food/search')} />
-        </View>
+    <Screen scrollable>
+      <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.md }}>
+        <DayNavigator day={day} today={today} onChange={setDay} />
+        <SyncNotice status={syncStatus} />
       </View>
+
+      {isLoading || !totals ? (
+        <LoadingState label="Opening your diary" />
+      ) : (
+        <>
+          <DayTotalsBar totals={totals.total} />
+
+          {totals.entryCount === 0 ? (
+            /*
+             * An empty day still shows its meals below, so this is a nudge
+             * rather than a dead end — the four "Add …" rows underneath are
+             * the actual way in.
+             */
+            <View style={{ paddingVertical: theme.spacing.lg }}>
+              <EmptyState
+                title={day === today ? 'Nothing logged yet today' : 'Nothing logged'}
+                description="Add your first item to any meal below."
+                actionLabel="Search foods"
+                onAction={() => addTo('breakfast')}
+              />
+            </View>
+          ) : null}
+
+          <View style={{ paddingTop: theme.spacing.lg }}>
+            <FrequentStrip
+              foods={frequent}
+              onRepeat={(food) =>
+                repeatEntry(food.lastLogId, {
+                  diaryDate: day,
+                  // The day being viewed decides the date; the clock decides
+                  // the meal, which is right for today and a reasonable guess
+                  // for a day being filled in after the fact.
+                  meal: defaultMealFor(new Date(), timeZone),
+                })
+              }
+            />
+          </View>
+
+          <View style={{ gap: theme.spacing.md, paddingTop: theme.spacing.md }}>
+            {MEAL_SLOTS.map((meal) => (
+              <MealSection
+                key={meal}
+                meal={meal}
+                entries={entries.filter((entry) => entry.meal === meal)}
+                subtotal={totals.byMeal[meal].total}
+                onAdd={() => addTo(meal)}
+                onSelectEntry={open}
+              />
+            ))}
+          </View>
+
+          <Text
+            variant="caption"
+            color="muted"
+            align="center"
+            style={{ paddingVertical: theme.spacing.xl }}
+          >
+            Totals are the sum of what you logged, in your own timezone.
+          </Text>
+        </>
+      )}
     </Screen>
   );
 }

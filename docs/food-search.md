@@ -245,13 +245,14 @@ index rather than left to the caller to remember.
 
 Recording a use never touches the shared catalogue.
 
-### Windowed frequency is deferred, deliberately
+### Windowed frequency — deferred here, delivered with the diary
 
-True "most logged in the last 30 days" needs per-event rows, which is exactly
-what `food_logs` will be in the next milestone. Building an events table now,
-before the diary that produces the events, would create a second source of
-truth to keep in step for no present benefit.
+True "most logged recently" needs per-event rows. Building an events table
+before the diary that produces the events would have created a second source of
+truth to keep in step for no present benefit, so this shipped with `use_count`,
+an all-time tally, which is enough to order a shortlist.
 
-`use_count` is an all-time tally and is enough to order a shortlist. The
-windowed version becomes a query over `food_logs` once that table exists, and
-`food_recents` remains the offline-capable cache either way.
+`food_logs` now exists, and the windowed version is a 90-day query over it —
+see [Frequent foods](food-diary.md#frequent-foods). That is what ranks the
+"log again" shortcuts. `food_recents` stays what it always was: the
+offline-capable cache of catalogue details.
