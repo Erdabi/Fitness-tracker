@@ -6,6 +6,7 @@ import {
   updateProfile,
   updateSettings,
 } from '@/db/repositories/profiles';
+import { recordFoodUse } from '@/db/repositories/foodRecents';
 import type { SqlDatabase } from '@/db/types';
 import { sync } from '../engine';
 import { countPending, readCursor, withOutbox } from '../outbox';
@@ -501,5 +502,82 @@ describe('offline sync', () => {
     const afterThird = getProfile(USER, db);
     expect(afterThird?.display_name).toBe('Stable');
     expect(afterThird?.updated_at).toBe(afterFirst?.updated_at);
+  });
+
+  /* ----------------------------------------------------- recent foods --- */
+
+  /**
+   * Recently used foods are user-owned, so they ride the same offline path as
+   * everything else: logged locally now, pushed when there is a connection.
+   */
+  describe('food_recents', () => {
+    const FOOD = '33333333-3333-4333-8333-333333333333';
+
+    it('records a use offline and pushes it on reconnect', async () => {
+      remote.goOffline();
+
+      recordFoodUse({ userId: USER, foodId: FOOD, at: 1_700_000_000_000 }, db);
+
+      expect(countPending(db)).toBe(1);
+      expect(remote.find('food_recents', FOOD)).toBeUndefined();
+
+      remote.goOnline();
+      db.run('UPDATE sync_outbox SET next_attempt_at = 0');
+      const outcome = await run();
+
+      expect(outcome.pushed).toBe(1);
+      expect(remote.rows('food_recents')).toHaveLength(1);
+    });
+
+    /** Epoch millis locally, timestamptz on the wire — toRemote bridges them. */
+    it('converts the local timestamp to ISO on the wire', async () => {
+      recordFoodUse({ userId: USER, foodId: FOOD, at: 1_700_000_000_000 }, db);
+      await run();
+
+      const pushed = remote.rows('food_recents')[0];
+      expect(pushed?.last_used_at).toBe('2023-11-14T22:13:20.000Z');
+      expect(pushed?.use_count).toBe(1);
+    });
+
+    it('pulls a use recorded on another device', async () => {
+      await run();
+
+      remote.seed('food_recents', {
+        id: 'recent-1',
+        user_id: USER,
+        food_id: FOOD,
+        last_used_at: '2026-09-01T10:00:00.000Z',
+        use_count: 7,
+        created_at: '2026-08-19T10:00:00.000Z',
+        updated_at: '2026-09-01T10:00:00.000Z',
+        deleted_at: null,
+      });
+
+      await run();
+
+      const local = db.get<{ use_count: number; last_used_at: number }>(
+        'SELECT use_count, last_used_at FROM food_recents WHERE id = ?',
+        ['recent-1'],
+      );
+      expect(local?.use_count).toBe(7);
+      expect(local?.last_used_at).toBe(Date.parse('2026-09-01T10:00:00.000Z'));
+    });
+
+    it('never pulls another user’s recents', async () => {
+      remote.seed('food_recents', {
+        id: 'not-mine',
+        user_id: OTHER_USER,
+        food_id: FOOD,
+        last_used_at: '2026-09-01T10:00:00.000Z',
+        use_count: 3,
+        created_at: '2026-08-19T10:00:00.000Z',
+        updated_at: '2026-09-01T10:00:00.000Z',
+        deleted_at: null,
+      });
+
+      await run();
+
+      expect(db.get('SELECT 1 FROM food_recents WHERE id = ?', ['not-mine'])).toBeUndefined();
+    });
   });
 });

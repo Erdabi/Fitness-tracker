@@ -3,7 +3,7 @@ import type { SqlDatabase } from '@/db/types';
 import type { RemoteAdapter } from './remote';
 
 /** Tables that participate in sync. Extended as features land. */
-export type SyncableTable = 'profiles' | 'user_settings';
+export type SyncableTable = 'profiles' | 'user_settings' | 'food_recents';
 
 /** Postgres tables the engine may address, taken from the generated types. */
 export type RemoteTable = keyof Database['public']['Tables'];

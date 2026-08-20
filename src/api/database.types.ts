@@ -12,6 +12,27 @@
 
 export type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
 
+/** Mirrors the `public.food_search_result` composite type. */
+export interface FoodSearchResultRow {
+  food_id: string;
+  name: string;
+  brand_name: string | null;
+  source_id: string;
+  is_verified: boolean;
+  is_own: boolean;
+  base_unit: 'g' | 'ml' | 'item';
+  base_amount: number | string;
+  calories: number | string;
+  protein_g: number | string;
+  carbohydrates_g: number | string;
+  fat_g: number | string;
+  serving_label: string | null;
+  serving_amount: number | string | null;
+  serving_unit: 'g' | 'ml' | 'item' | null;
+  match_kind: string;
+  score: number | string;
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -85,9 +106,262 @@ export interface Database {
           },
         ];
       };
+      food_brands: {
+        Row: {
+          id: string;
+          owner_id: string | null;
+          name: string;
+          normalized_name: string;
+          source_id: string;
+          external_id: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          owner_id?: string | null;
+          name: string;
+          normalized_name: string;
+          source_id: string;
+          external_id?: string | null;
+        };
+        Update: { name?: string; normalized_name?: string; deleted_at?: string | null };
+        Relationships: [];
+      };
+      foods: {
+        Row: {
+          id: string;
+          owner_id: string | null;
+          brand_id: string | null;
+          category_id: string | null;
+          name: string;
+          normalized_name: string;
+          name_i18n: Json;
+          description: string | null;
+          kind: 'generic' | 'branded' | 'packaged';
+          base_unit: 'g' | 'ml' | 'item';
+          base_amount: number;
+          source_id: string;
+          external_id: string | null;
+          source_url: string | null;
+          source_updated_at: string | null;
+          imported_at: string | null;
+          is_verified: boolean;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string | null;
+          brand_id?: string | null;
+          name: string;
+          normalized_name: string;
+          kind?: 'generic' | 'branded' | 'packaged';
+          base_unit: 'g' | 'ml' | 'item';
+          base_amount?: number;
+          source_id: string;
+          is_verified?: boolean;
+        };
+        Update: {
+          name?: string;
+          normalized_name?: string;
+          brand_id?: string | null;
+          base_unit?: 'g' | 'ml' | 'item';
+          base_amount?: number;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'foods_brand_id_fkey';
+            columns: ['brand_id'];
+            referencedRelation: 'food_brands';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      food_nutrition: {
+        Row: {
+          food_id: string;
+          calories: number;
+          protein_g: number;
+          carbohydrates_g: number;
+          fat_g: number;
+          fiber_g: number | null;
+          sugar_g: number | null;
+          saturated_fat_g: number | null;
+          sodium_mg: number | null;
+          micronutrients: Json;
+          source_id: string;
+          confidence: number | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          food_id: string;
+          calories: number;
+          protein_g?: number;
+          carbohydrates_g?: number;
+          fat_g?: number;
+          fiber_g?: number | null;
+          sugar_g?: number | null;
+          saturated_fat_g?: number | null;
+          sodium_mg?: number | null;
+          micronutrients?: Json;
+          source_id: string;
+          confidence?: number | null;
+        };
+        Update: {
+          calories?: number;
+          protein_g?: number;
+          carbohydrates_g?: number;
+          fat_g?: number;
+          source_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'food_nutrition_food_id_fkey';
+            columns: ['food_id'];
+            referencedRelation: 'foods';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      food_servings: {
+        Row: {
+          id: string;
+          food_id: string;
+          label: string;
+          amount: number;
+          unit: 'g' | 'ml' | 'item';
+          is_default: boolean;
+          sort_order: number;
+          source_id: string;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          food_id: string;
+          label: string;
+          amount: number;
+          unit: 'g' | 'ml' | 'item';
+          is_default?: boolean;
+          sort_order?: number;
+          source_id: string;
+        };
+        Update: {
+          label?: string;
+          amount?: number;
+          is_default?: boolean;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'food_servings_food_id_fkey';
+            columns: ['food_id'];
+            referencedRelation: 'foods';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      food_barcodes: {
+        Row: {
+          id: string;
+          food_id: string;
+          owner_id: string | null;
+          barcode: string;
+          format: 'ean13' | 'ean8' | 'upca' | 'upce' | 'other';
+          source_id: string;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          food_id: string;
+          barcode: string;
+          format?: 'ean13' | 'ean8' | 'upca' | 'upce' | 'other';
+          source_id: string;
+        };
+        Update: { deleted_at?: string | null };
+        Relationships: [
+          {
+            foreignKeyName: 'food_barcodes_food_id_fkey';
+            columns: ['food_id'];
+            referencedRelation: 'foods';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      food_recents: {
+        Row: {
+          id: string;
+          user_id: string;
+          food_id: string;
+          last_used_at: string;
+          use_count: number;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          food_id: string;
+          last_used_at?: string;
+          use_count?: number;
+          deleted_at?: string | null;
+        };
+        Update: {
+          last_used_at?: string;
+          use_count?: number;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'food_recents_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'food_recents_food_id_fkey';
+            columns: ['food_id'];
+            referencedRelation: 'foods';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: Record<never, never>;
-    Functions: Record<never, never>;
+    Functions: {
+      /*
+       * The search RPCs. `numeric` columns arrive as strings over PostgREST —
+       * that is deliberate on Supabase's side, to avoid float precision loss —
+       * so the row type says `number | string` and searchService converts once
+       * at the boundary.
+       */
+      search_foods: {
+        Args: {
+          p_query: string;
+          p_limit?: number;
+          p_cursor_score?: number | null;
+          p_cursor_id?: string | null;
+        };
+        Returns: FoodSearchResultRow[];
+      };
+      lookup_barcode: {
+        Args: { p_barcode: string };
+        Returns: { result: FoodSearchResultRow; duplicate_count: number }[];
+      };
+      list_recent_foods: {
+        Args: { p_limit?: number; p_order?: string };
+        Returns: FoodSearchResultRow[];
+      };
+    };
     Enums: {
       sex: 'male' | 'female' | 'other';
       unit_system: 'metric' | 'imperial';

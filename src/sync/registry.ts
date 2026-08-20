@@ -1,5 +1,5 @@
 import { describeTable, type TableDescriptor } from './types';
-import type { ProfileRow, UserSettingsRow } from '@/db/schema';
+import type { FoodRecentRow, ProfileRow, UserSettingsRow } from '@/db/schema';
 
 /**
  * Registered syncable tables, in dependency order.
@@ -68,7 +68,7 @@ const userSettings: TableDescriptor = describeTable<UserSettingsRow>({
   }),
 });
 
-export const SYNC_REGISTRY = [profiles, userSettings] as const;
+
 
 /* ------------------------------------------------------------- coercion -- */
 // Server payloads are `unknown` at the boundary. These narrow without
@@ -87,3 +87,37 @@ function toEpochMs(value: unknown): number | null {
   const ms = Date.parse(value);
   return Number.isNaN(ms) ? null : ms;
 }
+
+/**
+ * Recently used foods.
+ *
+ * Registered last: a recent row references a food, and although the shared
+ * catalogue always exists server-side, keeping the order explicit means a
+ * future user-owned food will push before the recent that points at it.
+ */
+const foodRecents: TableDescriptor = describeTable<FoodRecentRow>({
+  table: 'food_recents',
+  remoteTable: 'food_recents',
+  userColumn: 'user_id',
+  toRemote: (local) => ({
+    id: local.id,
+    user_id: local.user_id,
+    food_id: local.food_id,
+    last_used_at: new Date(local.last_used_at).toISOString(),
+    use_count: local.use_count,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    user_id: String(remote.user_id),
+    food_id: String(remote.food_id),
+    last_used_at: toEpochMs(remote.last_used_at) ?? Date.now(),
+    use_count: asNullableNumber(remote.use_count) ?? 1,
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
+export const SYNC_REGISTRY = [profiles, userSettings, foodRecents] as const;

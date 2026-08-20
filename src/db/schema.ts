@@ -39,6 +39,52 @@ export interface UserSettingsRow extends SyncColumns {
   created_at: number;
 }
 
+export interface FoodRecentRow extends SyncColumns {
+  id: string;
+  user_id: string;
+  food_id: string;
+  /** Epoch ms. */
+  last_used_at: number;
+  use_count: number;
+  created_at: number;
+}
+
+/**
+ * A cached catalogue food. Local only — never synced, never pushed.
+ *
+ * Booleans are 0/1 and nutrients are per `base_amount` of `base_unit`, matching
+ * the server representation so the same arithmetic works on both.
+ */
+export interface FoodCacheRow {
+  food_id: string;
+  name: string;
+  brand_name: string | null;
+  source_id: string;
+  is_verified: number;
+  is_own: number;
+  base_unit: 'g' | 'ml' | 'item';
+  base_amount: number;
+  calories: number;
+  protein_g: number;
+  carbohydrates_g: number;
+  fat_g: number;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  saturated_fat_g: number | null;
+  sodium_mg: number | null;
+  cached_at: number;
+}
+
+export interface FoodCacheServingRow {
+  id: string;
+  food_id: string;
+  label: string;
+  amount: number;
+  unit: 'g' | 'ml' | 'item';
+  is_default: number;
+  sort_order: number;
+}
+
 /**
  * Column manifest, used by the migration test to verify that the shipped SQL
  * actually produces the shape the code expects.
@@ -81,4 +127,43 @@ export const TABLE_COLUMNS = {
     'last_error',
   ],
   sync_state: ['table_name', 'cursor', 'last_pulled_at'],
+  food_recents: [
+    'id',
+    'user_id',
+    'food_id',
+    'last_used_at',
+    'use_count',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  food_cache: [
+    'food_id',
+    'name',
+    'brand_name',
+    'source_id',
+    'is_verified',
+    'is_own',
+    'base_unit',
+    'base_amount',
+    'calories',
+    'protein_g',
+    'carbohydrates_g',
+    'fat_g',
+    'fiber_g',
+    'sugar_g',
+    'saturated_fat_g',
+    'sodium_mg',
+    'cached_at',
+  ],
+  food_cache_servings: [
+    'id',
+    'food_id',
+    'label',
+    'amount',
+    'unit',
+    'is_default',
+    'sort_order',
+  ],
 } as const satisfies Record<string, readonly string[]>;

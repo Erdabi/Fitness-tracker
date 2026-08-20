@@ -22,8 +22,13 @@ export PGHOST="${PGHOST:-/tmp}"
 export PGPORT="${PGPORT:-55432}"
 export PGUSER="${PGUSER:-postgres}"
 
+# The trap must not change the script's exit status. `cleanup` ending in a
+# successful command would mask a failing test suite and make this gate report
+# success while the database checks were failing — which it did, before this.
 cleanup() {
+  local status=$?
   psql -q -d postgres -c "drop database if exists ${DB_NAME};" >/dev/null 2>&1 || true
+  return "${status}"
 }
 trap cleanup EXIT
 
@@ -45,11 +50,27 @@ done
 echo "→ running SQL test suites"
 # Only NOTICE output carries the assertions; a failure raises and psql exits 3,
 # which -e turns into a failed script.
+failures=0
+
 for suite in $(find "${ROOT}/supabase/tests" -name '*.test.sql' | sort); do
   printf '\n── %s\n' "$(basename "${suite}")"
-  psql -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "${suite}" 2>&1 |
-    sed -n 's/^psql:[^:]*:[0-9]*: NOTICE:  //p'
+
+  # Captured rather than piped: a pipeline reports the exit status of `sed`,
+  # so piping straight into it would discard psql's failure.
+  if output=$(psql -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "${suite}" 2>&1); then
+    printf '%s\n' "${output}" | sed -n 's/^psql:[^:]*:[0-9]*: NOTICE:  //p'
+  else
+    printf '%s\n' "${output}" | sed -n 's/^psql:[^:]*:[0-9]*: NOTICE:  //p'
+    printf '%s\n' "${output}" | grep -E 'ERROR|FAIL' || true
+    failures=$((failures + 1))
+  fi
 done
+
+if [ "${failures}" -gt 0 ]; then
+  echo
+  echo "✗ ${failures} database test suite(s) failed"
+  exit 1
+fi
 
 echo
 echo "✓ database verification passed"
