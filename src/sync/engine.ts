@@ -191,6 +191,16 @@ async function pullTable(
     if (cursor === startingCursor) break;
   }
 
+  /*
+   * Let the table rebuild anything it derives rather than receives.
+   *
+   * Only when something actually landed: the hook is idempotent, but running
+   * it on every quiet cycle would be work for nothing.
+   */
+  if (applied > 0 && descriptor.afterPull) {
+    descriptor.afterPull(db, userId);
+  }
+
   return applied;
 }
 

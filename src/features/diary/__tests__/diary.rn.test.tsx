@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react-native';
 
-import type { FoodLogRow } from '@/db/schema';
+import type { FoodLogRow, NutritionGoalRow } from '@/db/schema';
 import { ThemeProvider } from '@/theme';
 import { asLocalDay } from '@/lib/date';
 import { DayNavigator, describeDay, formatFullDay } from '../DayNavigator';
@@ -193,24 +193,53 @@ describe('DayNavigator', () => {
 });
 
 describe('DayTotalsBar', () => {
-  it('shows a dash rather than a zero for a nutrient nobody reported', () => {
+  const TOTALS = {
+    calories: 1760,
+    protein_g: 90,
+    carbohydrates_g: 200,
+    fat_g: 60,
+    fiber_g: null,
+    sugar_g: null,
+    saturated_fat_g: null,
+    sodium_mg: null,
+  };
+
+  const GOAL = {
+    ...ENTRY,
+    id: 'goal-1',
+    calorie_target: 2000,
+    protein_target_g: 144,
+    carbohydrate_target_g: 200,
+    fat_target_g: 63,
+  } as unknown as NutritionGoalRow;
+
+  it('shows the day total on its own when no goal is set', () => {
+    renderThemed(<DayTotalsBar totals={TOTALS} goal={null} />);
+
+    expect(screen.getByText('1760')).toBeTruthy();
+    expect(screen.queryByText('remaining')).toBeNull();
+  });
+
+  it('shows consumed against the goal, and what is left', () => {
+    renderThemed(<DayTotalsBar totals={TOTALS} goal={GOAL} />);
+
+    expect(screen.getByText('remaining')).toBeTruthy();
+    expect(screen.getByText('240')).toBeTruthy();
+  });
+
+  /**
+   * The bug this prevents: rendering −240 under a label reading "remaining",
+   * which a user reads as an allowance they still have.
+   */
+  it('reports an overage as an overage rather than a negative allowance', () => {
     renderThemed(
-      <DayTotalsBar
-        totals={{
-          calories: 261,
-          protein_g: 3.9,
-          carbohydrates_g: 40,
-          fat_g: 2.6,
-          fiber_g: null,
-          sugar_g: null,
-          saturated_fat_g: null,
-          sodium_mg: null,
-        }}
-      />,
+      <DayTotalsBar totals={{ ...TOTALS, calories: 2240 }} goal={GOAL} />,
     );
 
-    expect(screen.getByText('261')).toBeTruthy();
-    expect(screen.getByText('3.9 g')).toBeTruthy();
+    expect(screen.getByText('over')).toBeTruthy();
+    expect(screen.getByText('240')).toBeTruthy();
+    expect(screen.queryByText('-240')).toBeNull();
+    expect(screen.queryByText('−240')).toBeNull();
   });
 });
 

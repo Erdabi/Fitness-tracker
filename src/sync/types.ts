@@ -7,7 +7,9 @@ export type SyncableTable =
   | 'profiles'
   | 'user_settings'
   | 'food_recents'
-  | 'food_logs';
+  | 'food_logs'
+  | 'nutrition_goals'
+  | 'weight_entries';
 
 /** Postgres tables the engine may address, taken from the generated types. */
 export type RemoteTable = keyof Database['public']['Tables'];
@@ -52,6 +54,20 @@ export interface TableDescriptor {
   readonly toRemote: (local: AnyRow) => AnyRow;
   /** Maps a server row to the local shape. */
   readonly fromRemote: (remote: AnyRow) => AnyRow;
+  /**
+   * Optional reconciliation to run after rows for this table have landed.
+   *
+   * For columns the device derives rather than receives. `nutrition_goals`
+   * needs it: a period's end date is computed from the next period's start, so
+   * a pull that introduces a period from another device changes the boundary
+   * of one already here. The engine stays table-agnostic — it calls whatever
+   * the descriptor declares and knows nothing about goals.
+   *
+   * Must be idempotent, must not touch `updated_at`, and must not enqueue
+   * anything: it runs on data that just arrived from the server, and a write
+   * that looked like a user edit would be pushed straight back.
+   */
+  readonly afterPull?: (db: SqlDatabase, userId: string) => void;
 }
 
 /**
@@ -66,6 +82,7 @@ export function describeTable<TLocal extends object>(descriptor: {
   userColumn: 'id' | 'user_id';
   toRemote: (local: TLocal) => AnyRow;
   fromRemote: (remote: AnyRow) => TLocal;
+  afterPull?: (db: SqlDatabase, userId: string) => void;
 }): TableDescriptor {
   return descriptor as unknown as TableDescriptor;
 }

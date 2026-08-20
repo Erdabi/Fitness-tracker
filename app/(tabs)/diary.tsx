@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { EmptyState, LoadingState, Screen, Text } from '@/components/ui';
 import { MEAL_SLOTS, type FoodLogRow, type MealSlot } from '@/db/schema';
@@ -10,6 +10,7 @@ import { FrequentStrip } from '@/features/diary/FrequentStrip';
 import { defaultMealFor } from '@/features/diary/MealPicker';
 import { MealSection } from '@/features/diary/MealSection';
 import { SyncNotice } from '@/features/diary/SyncNotice';
+import { useGoalForDate } from '@/features/goals/useGoals';
 import {
   useDiaryDay,
   useDiaryMutations,
@@ -36,6 +37,9 @@ export default function DiaryScreen() {
 
   const { entries, totals, isLoading } = useDiaryDay(day);
   const { foods: frequent } = useFrequentFoods();
+  // Resolved for the day being viewed, not for today — a page for 5 August
+  // must show what was being aimed at on 5 August.
+  const { goal } = useGoalForDate(day);
   const { repeatEntry } = useDiaryMutations();
   const timeZone = useDiaryTimeZone();
   const syncStatus = useSyncStatus();
@@ -59,7 +63,19 @@ export default function DiaryScreen() {
         <LoadingState label="Opening your diary" />
       ) : (
         <>
-          <DayTotalsBar totals={totals.total} />
+          <DayTotalsBar totals={totals.total} goal={goal} />
+
+          {!goal ? (
+            <Pressable
+              onPress={() => router.push('/goals')}
+              accessibilityRole="button"
+              style={{ paddingVertical: theme.spacing.sm }}
+            >
+              <Text variant="caption" color="accent">
+                Set a calorie goal to see how a day compares →
+              </Text>
+            </Pressable>
+          ) : null}
 
           {totals.entryCount === 0 ? (
             /*
@@ -111,7 +127,9 @@ export default function DiaryScreen() {
             align="center"
             style={{ paddingVertical: theme.spacing.xl }}
           >
-            Totals are the sum of what you logged, in your own timezone.
+            {goal
+              ? 'Totals are the sum of what you logged, against the goal in force that day.'
+              : 'Totals are the sum of what you logged, in your own timezone.'}
           </Text>
         </>
       )}

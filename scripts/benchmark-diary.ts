@@ -20,6 +20,7 @@ import {
   listDay,
   rangeTotals,
 } from '../src/db/repositories/foodLogs';
+import { goalForDate, openGoalPeriod } from '../src/db/repositories/goals';
 import type { SqlDatabase } from '../src/db/types';
 import { addDays, asLocalDay, type LocalDay } from '../src/lib/date';
 import type { MealSlot } from '../src/db/schema';
@@ -31,6 +32,16 @@ const MEALS: MealSlot[] = ['breakfast', 'lunch', 'dinner', 'snack'];
 
 /** Entry counts to measure. The last is several years of real logging. */
 const SIZES = [100, 1_000, 10_000];
+
+/**
+ * Goal periods to measure against.
+ *
+ * Somebody who recalculates monthly for five years has about sixty. Two
+ * hundred is well past anything realistic, which is the point: the lookup is
+ * indexed and stops at the first hit, so the number behind it should not
+ * matter.
+ */
+const GOAL_PERIODS = 200;
 
 function openDatabase(): SqlDatabase & { close: () => void } {
   const db = new Database(':memory:');
@@ -60,6 +71,24 @@ function openDatabase(): SqlDatabase & { close: () => void } {
  */
 function seed(db: SqlDatabase, count: number): void {
   const days = Math.max(1, Math.ceil(count / 5));
+
+  // A long history of goal periods, so the per-day lookup is measured against
+  // a chain rather than a single row.
+  for (let index = 0; index < GOAL_PERIODS; index += 1) {
+    openGoalPeriod(
+      {
+        userId: USER,
+        effectiveFrom: addDays(TODAY, -(GOAL_PERIODS - index) * 14),
+        targets: {
+          calorieTarget: 1800 + (index % 12) * 50,
+          macros: { protein_g: 140, carbohydrates_g: 200, fat_g: 60 },
+        },
+        recommendation: null,
+        at: 1_000_000 + index,
+      },
+      db,
+    );
+  }
 
   db.transaction(() => {
     for (let index = 0; index < count; index += 1) {
@@ -145,6 +174,12 @@ for (const size of SIZES) {
   });
   time('frequent foods (90-day window)', 50, () => {
     frequentFoods(USER, { today: TODAY, timeZone: ZONE }, db);
+  });
+  time(`goal for today (${GOAL_PERIODS} periods)`, 500, () => {
+    goalForDate(USER, TODAY, db);
+  });
+  time('goal for a date years back', 500, () => {
+    goalForDate(USER, addDays(TODAY, -1200), db);
   });
 
   db.close();

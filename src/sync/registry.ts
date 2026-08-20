@@ -1,9 +1,12 @@
+import { resyncGoalPeriods } from '@/db/repositories/goals';
 import { describeTable, type TableDescriptor } from './types';
 import type {
   FoodLogRow,
   FoodRecentRow,
+  NutritionGoalRow,
   ProfileRow,
   UserSettingsRow,
+  WeightEntryRow,
 } from '@/db/schema';
 
 /**
@@ -28,6 +31,7 @@ const profiles: TableDescriptor = describeTable<ProfileRow>({
     height_cm: local.height_cm,
     unit_system: local.unit_system,
     time_zone: local.time_zone,
+    activity_level: local.activity_level,
     deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
   }),
   fromRemote: (remote) => ({
@@ -40,6 +44,9 @@ const profiles: TableDescriptor = describeTable<ProfileRow>({
     unit_system: (asNullableString(remote.unit_system) ??
       'metric') as ProfileRow['unit_system'],
     time_zone: asNullableString(remote.time_zone) ?? 'UTC',
+    activity_level: asNullableString(
+      remote.activity_level,
+    ) as ProfileRow['activity_level'],
     created_at: toEpochMs(remote.created_at) ?? Date.now(),
     updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
     server_updated_at: asNullableString(remote.updated_at),
@@ -244,4 +251,129 @@ const foodLogs: TableDescriptor = describeTable<FoodLogRow>({
   }),
 });
 
-export const SYNC_REGISTRY = [profiles, userSettings, foodRecents, foodLogs] as const;
+/**
+ * Goal periods.
+ *
+ * `effective_to` is absent from `toRemote` on purpose. It is derived — by
+ * trigger on the server, by `resyncGoalPeriods` on the device — so a change of
+ * target is exactly ONE row to push. A client that closed the previous period
+ * itself would have two writes that must land in order, and an offline outbox
+ * cannot promise that: a partially applied push would leave two periods
+ * claiming the same day, which is the one thing the whole design exists to
+ * prevent.
+ */
+const nutritionGoals: TableDescriptor = describeTable<NutritionGoalRow>({
+  table: 'nutrition_goals',
+  remoteTable: 'nutrition_goals',
+  userColumn: 'user_id',
+  /*
+   * A period arriving from another device changes where the period before it
+   * ends. The server recomputes its own chain by trigger; this recomputes the
+   * device's, so both sides answer "which goal applies on 5 August" the same
+   * way — including for a period created here that has not been pushed yet.
+   */
+  afterPull: (db, userId) => resyncGoalPeriods(userId, db),
+  toRemote: (local) => ({
+    id: local.id,
+    user_id: local.user_id,
+    effective_from: local.effective_from,
+
+    calorie_target: local.calorie_target,
+    protein_target_g: local.protein_target_g,
+    carbohydrate_target_g: local.carbohydrate_target_g,
+    fat_target_g: local.fat_target_g,
+
+    source: local.source,
+
+    calculated_calories: local.calculated_calories,
+    calculated_protein_g: local.calculated_protein_g,
+    calculated_carbohydrate_g: local.calculated_carbohydrate_g,
+    calculated_fat_g: local.calculated_fat_g,
+
+    basis_bmr: local.basis_bmr,
+    basis_tdee: local.basis_tdee,
+    basis_activity: local.basis_activity,
+    basis_direction: local.basis_direction,
+    basis_weight_kg: local.basis_weight_kg,
+    basis_height_cm: local.basis_height_cm,
+    basis_age_years: local.basis_age_years,
+    basis_sex: local.basis_sex,
+
+    acknowledged_below_floor: local.acknowledged_below_floor === 1,
+    note: local.note,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    user_id: String(remote.user_id),
+    effective_from: asNullableString(remote.effective_from) ?? '1970-01-01',
+    effective_to: asNullableString(remote.effective_to),
+
+    calorie_target: asNumeric(remote.calorie_target) ?? 2000,
+    protein_target_g: asNumeric(remote.protein_target_g) ?? 0,
+    carbohydrate_target_g: asNumeric(remote.carbohydrate_target_g) ?? 0,
+    fat_target_g: asNumeric(remote.fat_target_g) ?? 0,
+
+    source: (asNullableString(remote.source) ?? 'manual') as NutritionGoalRow['source'],
+
+    calculated_calories: asNumeric(remote.calculated_calories),
+    calculated_protein_g: asNumeric(remote.calculated_protein_g),
+    calculated_carbohydrate_g: asNumeric(remote.calculated_carbohydrate_g),
+    calculated_fat_g: asNumeric(remote.calculated_fat_g),
+
+    basis_bmr: asNumeric(remote.basis_bmr),
+    basis_tdee: asNumeric(remote.basis_tdee),
+    basis_activity: asNullableString(
+      remote.basis_activity,
+    ) as NutritionGoalRow['basis_activity'],
+    basis_direction: asNullableString(
+      remote.basis_direction,
+    ) as NutritionGoalRow['basis_direction'],
+    basis_weight_kg: asNumeric(remote.basis_weight_kg),
+    basis_height_cm: asNumeric(remote.basis_height_cm),
+    basis_age_years: asNumeric(remote.basis_age_years),
+    basis_sex: asNullableString(remote.basis_sex) as NutritionGoalRow['basis_sex'],
+
+    acknowledged_below_floor: remote.acknowledged_below_floor === true ? 1 : 0,
+    note: asNullableString(remote.note),
+
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
+const weightEntries: TableDescriptor = describeTable<WeightEntryRow>({
+  table: 'weight_entries',
+  remoteTable: 'weight_entries',
+  userColumn: 'user_id',
+  toRemote: (local) => ({
+    id: local.id,
+    user_id: local.user_id,
+    measured_on: local.measured_on,
+    weight_kg: local.weight_kg,
+    note: local.note,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    user_id: String(remote.user_id),
+    measured_on: asNullableString(remote.measured_on) ?? '1970-01-01',
+    weight_kg: asNumeric(remote.weight_kg) ?? 0,
+    note: asNullableString(remote.note),
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
+export const SYNC_REGISTRY = [
+  profiles,
+  userSettings,
+  foodRecents,
+  foodLogs,
+  nutritionGoals,
+  weightEntries,
+] as const;

@@ -3,6 +3,8 @@ import { useState } from 'react';
 import { Alert, View } from 'react-native';
 
 import { Button, Card, Screen, Text } from '@/components/ui';
+import { sourceLabel } from '@/features/goals/GoalSummary';
+import { useCurrentGoal } from '@/features/goals/useGoals';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { useProfile } from '@/features/profile/useProfile';
 import { useSyncStatus } from '@/sync/useSyncStatus';
@@ -19,6 +21,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { session, signOut } = useAuth();
   const { profile } = useProfile();
+  const { goal } = useCurrentGoal();
   const { preference, setPreference } = useThemePreference();
   const { pendingCount, syncNow } = useSyncStatus();
 
@@ -66,6 +69,34 @@ export default function SettingsScreen() {
             Days roll over in {profile.time_zone}
           </Text>
         ) : null}
+      </Card>
+
+      <Card>
+        <Text variant="overline" color="muted">
+          Nutrition goal
+        </Text>
+        {goal ? (
+          <>
+            <Text variant="body">
+              {goal.calorie_target.toLocaleString()} kcal · P{' '}
+              {Math.round(goal.protein_target_g)} g · C{' '}
+              {Math.round(goal.carbohydrate_target_g)} g · F{' '}
+              {Math.round(goal.fat_target_g)} g
+            </Text>
+            <Text variant="caption" color="muted">
+              {sourceLabel(goal)}
+            </Text>
+          </>
+        ) : (
+          <Text variant="body" color="secondary">
+            No target set yet.
+          </Text>
+        )}
+        <Button
+          label={goal ? 'Manage goal' : 'Set a goal'}
+          variant="secondary"
+          onPress={() => router.push('/goals')}
+        />
       </Card>
 
       <Card>

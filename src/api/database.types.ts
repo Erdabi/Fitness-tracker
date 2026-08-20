@@ -46,6 +46,7 @@ export interface Database {
           height_cm: number | null;
           unit_system: 'metric' | 'imperial';
           time_zone: string;
+          activity_level: 'sedentary' | 'light' | 'moderate' | 'very' | 'extra' | null;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -68,6 +69,7 @@ export interface Database {
           height_cm?: number | null;
           unit_system?: 'metric' | 'imperial';
           time_zone?: string;
+          activity_level?: 'sedentary' | 'light' | 'moderate' | 'very' | 'extra' | null;
           deleted_at?: string | null;
         };
         Relationships: [];
@@ -442,6 +444,117 @@ export interface Database {
           },
         ];
       };
+      nutrition_goals: {
+        Row: {
+          id: string;
+          user_id: string;
+          effective_from: string;
+          /** Derived by trigger. NULL = current period. */
+          effective_to: string | null;
+          calorie_target: number;
+          protein_target_g: number | string;
+          carbohydrate_target_g: number | string;
+          fat_target_g: number | string;
+          source: 'calculated' | 'manual' | 'calculated_then_modified';
+          calculated_calories: number | null;
+          calculated_protein_g: number | string | null;
+          calculated_carbohydrate_g: number | string | null;
+          calculated_fat_g: number | string | null;
+          basis_bmr: number | null;
+          basis_tdee: number | null;
+          basis_activity: 'sedentary' | 'light' | 'moderate' | 'very' | 'extra' | null;
+          basis_direction: 'lose' | 'maintain' | 'gain' | null;
+          basis_weight_kg: number | string | null;
+          basis_height_cm: number | string | null;
+          basis_age_years: number | null;
+          basis_sex: 'male' | 'female' | 'other' | null;
+          acknowledged_below_floor: boolean;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        /*
+         * `effective_to` is absent by design: the server derives it, and a
+         * client that supplied it would need two writes to land in order.
+         */
+        Insert: {
+          id?: string;
+          user_id: string;
+          effective_from: string;
+          calorie_target: number;
+          protein_target_g: number;
+          carbohydrate_target_g: number;
+          fat_target_g: number;
+          source: 'calculated' | 'manual' | 'calculated_then_modified';
+          calculated_calories?: number | null;
+          calculated_protein_g?: number | null;
+          calculated_carbohydrate_g?: number | null;
+          calculated_fat_g?: number | null;
+          basis_bmr?: number | null;
+          basis_tdee?: number | null;
+          basis_activity?: 'sedentary' | 'light' | 'moderate' | 'very' | 'extra' | null;
+          basis_direction?: 'lose' | 'maintain' | 'gain' | null;
+          basis_weight_kg?: number | null;
+          basis_height_cm?: number | null;
+          basis_age_years?: number | null;
+          basis_sex?: 'male' | 'female' | 'other' | null;
+          acknowledged_below_floor?: boolean;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          calorie_target?: number;
+          protein_target_g?: number;
+          carbohydrate_target_g?: number;
+          fat_target_g?: number;
+          source?: 'calculated' | 'manual' | 'calculated_then_modified';
+          acknowledged_below_floor?: boolean;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'nutrition_goals_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      weight_entries: {
+        Row: {
+          id: string;
+          user_id: string;
+          measured_on: string;
+          weight_kg: number | string;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          measured_on: string;
+          weight_kg: number;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          weight_kg?: number;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'weight_entries_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: Record<never, never>;
     Functions: {
@@ -474,6 +587,9 @@ export interface Database {
       unit_system: 'metric' | 'imperial';
       theme_pref: 'light' | 'dark' | 'system';
       meal_slot: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+      activity_level: 'sedentary' | 'light' | 'moderate' | 'very' | 'extra';
+      goal_direction: 'lose' | 'maintain' | 'gain';
+      goal_source: 'calculated' | 'manual' | 'calculated_then_modified';
     };
     CompositeTypes: Record<never, never>;
   };

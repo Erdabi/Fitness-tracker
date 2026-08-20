@@ -15,6 +15,14 @@ export type Sex = 'male' | 'female' | 'other';
 export type UnitSystemValue = 'metric' | 'imperial';
 export type ThemeValue = 'light' | 'dark' | 'system';
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack';
+export type ActivityLevelValue =
+  | 'sedentary'
+  | 'light'
+  | 'moderate'
+  | 'very'
+  | 'extra';
+export type GoalDirectionValue = 'lose' | 'maintain' | 'gain';
+export type GoalSource = 'calculated' | 'manual' | 'calculated_then_modified';
 
 /** Meals in the order a day happens, which is also the order they render. */
 export const MEAL_SLOTS: readonly MealSlot[] = [
@@ -35,6 +43,8 @@ export interface ProfileRow extends SyncColumns {
   unit_system: UnitSystemValue;
   /** IANA zone, e.g. `Europe/Zurich`. Drives every calendar-day calculation. */
   time_zone: string;
+  /** Prefills the calculator. Each goal snapshots the value it used. */
+  activity_level: ActivityLevelValue | null;
   created_at: number;
 }
 
@@ -120,6 +130,71 @@ export interface FoodLogRow extends SyncColumns {
 }
 
 /**
+ * One goal period.
+ *
+ * Active targets and the recommendation that produced them are stored side by
+ * side: overriding a suggested 2,050 with 2,200 keeps both, because losing the
+ * suggestion would make it impossible to say later what the app had proposed.
+ *
+ * The `basis_*` columns snapshot what the recommendation was calculated from,
+ * the same way a diary entry snapshots its nutrition — so a period from March
+ * still explains itself in December, after the profile has moved on.
+ */
+export interface NutritionGoalRow extends SyncColumns {
+  id: string;
+  user_id: string;
+
+  /** `YYYY-MM-DD`. The only boundary a client authors. */
+  effective_from: string;
+  /**
+   * `YYYY-MM-DD`, or null for the current period. DERIVED — by trigger on the
+   * server, by `resyncGoalPeriods` here — and never pushed.
+   *
+   * A value one day before `effective_from` marks a period superseded before
+   * it took effect. It covers no dates and every lookup skips it.
+   */
+  effective_to: string | null;
+
+  calorie_target: number;
+  protein_target_g: number;
+  carbohydrate_target_g: number;
+  fat_target_g: number;
+
+  source: GoalSource;
+
+  /** What the app recommended. Null only when there was no recommendation. */
+  calculated_calories: number | null;
+  calculated_protein_g: number | null;
+  calculated_carbohydrate_g: number | null;
+  calculated_fat_g: number | null;
+
+  basis_bmr: number | null;
+  basis_tdee: number | null;
+  basis_activity: ActivityLevelValue | null;
+  basis_direction: GoalDirectionValue | null;
+  basis_weight_kg: number | null;
+  basis_height_cm: number | null;
+  basis_age_years: number | null;
+  basis_sex: Sex | null;
+
+  /** 0 or 1. Set when the user knowingly chose a target below the floor. */
+  acknowledged_below_floor: number;
+  note: string | null;
+  created_at: number;
+}
+
+/** One weigh-in. Kept forever; the calculator reads the most recent. */
+export interface WeightEntryRow extends SyncColumns {
+  id: string;
+  user_id: string;
+  /** `YYYY-MM-DD` in the user's zone. A weigh-in is a morning, not an instant. */
+  measured_on: string;
+  weight_kg: number;
+  note: string | null;
+  created_at: number;
+}
+
+/**
  * A cached catalogue food. Local only — never synced, never pushed.
  *
  * Booleans are 0/1 and nutrients are per `base_amount` of `base_unit`, matching
@@ -169,6 +244,7 @@ export const TABLE_COLUMNS = {
     'height_cm',
     'unit_system',
     'time_zone',
+    'activity_level',
     'created_at',
     'updated_at',
     'server_updated_at',
@@ -271,6 +347,46 @@ export const TABLE_COLUMNS = {
     'sugar_g',
     'saturated_fat_g',
     'sodium_mg',
+    'note',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  nutrition_goals: [
+    'id',
+    'user_id',
+    'effective_from',
+    'effective_to',
+    'calorie_target',
+    'protein_target_g',
+    'carbohydrate_target_g',
+    'fat_target_g',
+    'source',
+    'calculated_calories',
+    'calculated_protein_g',
+    'calculated_carbohydrate_g',
+    'calculated_fat_g',
+    'basis_bmr',
+    'basis_tdee',
+    'basis_activity',
+    'basis_direction',
+    'basis_weight_kg',
+    'basis_height_cm',
+    'basis_age_years',
+    'basis_sex',
+    'acknowledged_below_floor',
+    'note',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  weight_entries: [
+    'id',
+    'user_id',
+    'measured_on',
+    'weight_kg',
     'note',
     'created_at',
     'updated_at',

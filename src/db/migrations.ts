@@ -277,6 +277,108 @@ export const MIGRATIONS: readonly Migration[] = [
          WHERE deleted_at IS NULL AND food_id IS NOT NULL`,
     ],
   },
+  {
+    version: 4,
+    name: 'nutrition_goals_and_weight',
+    statements: [
+      /*
+       * Activity level on the profile: a property of the person, prefilling
+       * the calculator. The value each goal was calculated from is snapshotted
+       * on the goal, so changing this never rewrites a past target.
+       */
+      `ALTER TABLE profiles ADD COLUMN activity_level TEXT
+         CHECK (activity_level IS NULL
+                OR activity_level IN ('sedentary', 'light', 'moderate', 'very', 'extra'))`,
+
+      /*
+       * Goal periods.
+       *
+       * Mirrors public.nutrition_goals. `effective_to` is DERIVED — on the
+       * server by trigger, here by `resyncGoalPeriods` — and is never pushed,
+       * so a client only ever writes one row per change and there is no pair
+       * of updates that has to reach the server in order.
+       *
+       * `effective_to = effective_from - 1 day` marks a period superseded
+       * before it took effect, which is what two devices opening a period on
+       * the same day produces. The row is kept; it just covers no dates.
+       */
+      `CREATE TABLE nutrition_goals (
+         id                        TEXT    PRIMARY KEY NOT NULL,
+         user_id                   TEXT    NOT NULL,
+
+         effective_from            TEXT    NOT NULL
+                                           CHECK (effective_from GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+         effective_to              TEXT
+                                           CHECK (effective_to IS NULL
+                                                  OR effective_to GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+
+         calorie_target            INTEGER NOT NULL CHECK (calorie_target BETWEEN 800 AND 10000),
+         protein_target_g          REAL    NOT NULL CHECK (protein_target_g >= 0),
+         carbohydrate_target_g     REAL    NOT NULL CHECK (carbohydrate_target_g >= 0),
+         fat_target_g              REAL    NOT NULL CHECK (fat_target_g >= 0),
+
+         source                    TEXT    NOT NULL
+                                           CHECK (source IN ('calculated', 'manual', 'calculated_then_modified')),
+
+         calculated_calories       INTEGER,
+         calculated_protein_g      REAL,
+         calculated_carbohydrate_g REAL,
+         calculated_fat_g          REAL,
+
+         basis_bmr                 INTEGER,
+         basis_tdee                INTEGER,
+         basis_activity            TEXT,
+         basis_direction           TEXT,
+         basis_weight_kg           REAL,
+         basis_height_cm           REAL,
+         basis_age_years           INTEGER,
+         basis_sex                 TEXT,
+
+         acknowledged_below_floor  INTEGER NOT NULL DEFAULT 0
+                                           CHECK (acknowledged_below_floor IN (0, 1)),
+         note                      TEXT,
+
+         created_at                INTEGER NOT NULL,
+         updated_at                INTEGER NOT NULL,
+         server_updated_at         TEXT,
+         deleted_at                INTEGER
+       )`,
+
+      /*
+       * The resolution index: the latest period starting on or before a date.
+       * Scanned in descending order and stopped at the first hit, so the cost
+       * does not grow with the number of periods behind it.
+       */
+      `CREATE INDEX idx_nutrition_goals_lookup
+         ON nutrition_goals(user_id, effective_from DESC, created_at DESC)
+         WHERE deleted_at IS NULL`,
+
+      /*
+       * Weight over time rather than a column on the profile, which would lose
+       * every previous measurement the first time somebody weighed themselves.
+       *
+       * No uniqueness on (user_id, measured_on): two devices recording the
+       * same morning offline would each produce a row, and rejecting the
+       * second forever is worse than keeping both and reading the later one.
+       */
+      `CREATE TABLE weight_entries (
+         id                TEXT    PRIMARY KEY NOT NULL,
+         user_id           TEXT    NOT NULL,
+         measured_on       TEXT    NOT NULL
+                                   CHECK (measured_on GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+         weight_kg         REAL    NOT NULL CHECK (weight_kg BETWEEN 25 AND 400),
+         note              TEXT,
+         created_at        INTEGER NOT NULL,
+         updated_at        INTEGER NOT NULL,
+         server_updated_at TEXT,
+         deleted_at        INTEGER
+       )`,
+
+      `CREATE INDEX idx_weight_entries_lookup
+         ON weight_entries(user_id, measured_on DESC, created_at DESC)
+         WHERE deleted_at IS NULL`,
+    ],
+  },
 ];
 
 /** Highest migration version known to this build. */

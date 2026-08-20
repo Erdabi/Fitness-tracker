@@ -68,7 +68,13 @@ export function ensureLocalProfile(
 export type ProfileUpdate = Partial<
   Pick<
     ProfileRow,
-    'display_name' | 'sex' | 'birth_date' | 'height_cm' | 'unit_system' | 'time_zone'
+    | 'display_name'
+    | 'sex'
+    | 'birth_date'
+    | 'height_cm'
+    | 'unit_system'
+    | 'time_zone'
+    | 'activity_level'
   >
 >;
 
@@ -79,6 +85,7 @@ const UPDATABLE_PROFILE_FIELDS = [
   'height_cm',
   'unit_system',
   'time_zone',
+  'activity_level',
 ] as const;
 
 export function updateProfile(

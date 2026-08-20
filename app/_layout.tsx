@@ -63,6 +63,14 @@ export default function RootLayout() {
                         presentation: 'modal',
                       }}
                     />
+                    <Stack.Screen
+                      name="goals/index"
+                      options={{ headerShown: true, title: 'Goal' }}
+                    />
+                    <Stack.Screen
+                      name="goals/calculator"
+                      options={{ headerShown: true, title: 'Calorie calculator' }}
+                    />
                   </Stack>
                 </AuthProvider>
               </QueryClientProvider>
