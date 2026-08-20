@@ -19,7 +19,7 @@ module.exports = {
       setupFiles: ['<rootDir>/jest.setup.node.ts'],
       testMatch: [
         '<rootDir>/src/**/__tests__/**/*.node.test.ts',
-        '<rootDir>/supabase/**/__tests__/**/*.node.test.ts',
+        '<rootDir>/tools/**/__tests__/**/*.node.test.ts',
       ],
       transform: {
         '^.+\\.tsx?$': ['babel-jest', { configFile: './babel.config.js' }],

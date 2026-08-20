@@ -12,4 +12,12 @@ module.exports = [
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
+  {
+    // Command-line tools: printing to stdout is the whole job, and their code
+    // never ships in the app bundle.
+    files: ['scripts/**/*.ts', 'tools/**/*.ts'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
 ];

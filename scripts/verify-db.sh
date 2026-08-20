@@ -42,10 +42,14 @@ for migration in $(find "${ROOT}/supabase/migrations" -name '*.sql' | sort); do
   psql -q -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "${migration}" >/dev/null
 done
 
-echo "→ running RLS test suite"
-# Only NOTICE output carries the assertions; a failure raises and psql exits 3.
-psql -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "${ROOT}/supabase/tests/rls.test.sql" 2>&1 |
-  sed -n 's/^psql:[^:]*:[0-9]*: NOTICE:  //p'
+echo "→ running SQL test suites"
+# Only NOTICE output carries the assertions; a failure raises and psql exits 3,
+# which -e turns into a failed script.
+for suite in $(find "${ROOT}/supabase/tests" -name '*.test.sql' | sort); do
+  printf '\n── %s\n' "$(basename "${suite}")"
+  psql -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f "${suite}" 2>&1 |
+    sed -n 's/^psql:[^:]*:[0-9]*: NOTICE:  //p'
+done
 
 echo
 echo "✓ database verification passed"

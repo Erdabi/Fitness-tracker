@@ -47,3 +47,6 @@ supabase/.temp/
 # generated native folders
 /ios
 /android
+
+# Downloaded food datasets — fetched, never vendored (docs/food-data-sources.md)
+data/
