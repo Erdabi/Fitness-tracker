@@ -31,6 +31,12 @@ const MAX_PULL_PAGES = 20;
  * How far the pull cursor is rewound before querying. See `overlapFrom`.
  * Generous enough to cover a slow commit, small enough that the re-fetched
  * window stays trivial.
+ *
+ * Mirrored by `sync_cursor_lag()` in supabase/tests/sync_timestamps.test.sql,
+ * which holds a transaction open for longer than this and proves the row it
+ * writes still lands inside the window. Changing the value here means changing
+ * it there — otherwise that test keeps passing while proving less than it
+ * says it does.
  */
 export const SYNC_CURSOR_LAG_MS = 5_000;
 
