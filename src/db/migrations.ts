@@ -379,6 +379,77 @@ export const MIGRATIONS: readonly Migration[] = [
          WHERE deleted_at IS NULL`,
     ],
   },
+  {
+    version: 5,
+    name: 'water',
+    statements: [
+      /*
+       * Water logs.
+       *
+       * A diary entry with one number. `local_date` follows the same rule as
+       * `food_logs.diary_date` — the user's calendar day in the zone the entry
+       * was made in, computed at write time and never re-derived — and on the
+       * server both tables share one resolver function so the two cannot
+       * disagree about DST or travel.
+       *
+       * Millilitres only. The unit a user reads is a display preference.
+       */
+      `CREATE TABLE water_logs (
+         id                TEXT    PRIMARY KEY NOT NULL,
+         user_id           TEXT    NOT NULL,
+         amount_ml         INTEGER NOT NULL
+                                   CHECK (amount_ml > 0 AND amount_ml <= 5000),
+         consumed_at       INTEGER NOT NULL,
+         time_zone         TEXT    NOT NULL,
+         local_date        TEXT    NOT NULL
+                                   CHECK (local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+         note              TEXT,
+         created_at        INTEGER NOT NULL,
+         updated_at        INTEGER NOT NULL,
+         server_updated_at TEXT,
+         deleted_at        INTEGER
+       )`,
+
+      // The day read and the daily total are one access pattern.
+      `CREATE INDEX idx_water_logs_day
+         ON water_logs(user_id, local_date, consumed_at)
+         WHERE deleted_at IS NULL`,
+
+      /*
+       * Water goal periods.
+       *
+       * Same shape as nutrition_goals: only `effective_from` is authored and
+       * `effective_to` is derived, so changing a target is one row to push and
+       * two devices cannot produce overlapping periods. The recommendation is
+       * kept beside the target, and `basis_weight_kg` snapshots what it was
+       * computed from — which is what stops a weight change from rewriting
+       * last month's goal.
+       */
+      `CREATE TABLE water_goals (
+         id                TEXT    PRIMARY KEY NOT NULL,
+         user_id           TEXT    NOT NULL,
+         effective_from    TEXT    NOT NULL
+                                   CHECK (effective_from GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+         effective_to      TEXT
+                                   CHECK (effective_to IS NULL
+                                          OR effective_to GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+         target_ml         INTEGER NOT NULL
+                                   CHECK (target_ml BETWEEN 500 AND 10000),
+         source            TEXT    NOT NULL CHECK (source IN ('calculated', 'manual')),
+         calculated_ml     INTEGER,
+         basis_weight_kg   REAL,
+         note              TEXT,
+         created_at        INTEGER NOT NULL,
+         updated_at        INTEGER NOT NULL,
+         server_updated_at TEXT,
+         deleted_at        INTEGER
+       )`,
+
+      `CREATE INDEX idx_water_goals_lookup
+         ON water_goals(user_id, effective_from DESC, created_at DESC)
+         WHERE deleted_at IS NULL`,
+    ],
+  },
 ];
 
 /** Highest migration version known to this build. */

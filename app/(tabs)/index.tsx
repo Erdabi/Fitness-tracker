@@ -1,29 +1,42 @@
 import { useRouter } from 'expo-router';
 import { View } from 'react-native';
 
-import { Button, Card, Screen, Skeleton, Text } from '@/components/ui';
-import { useAuth } from '@/features/auth/AuthProvider';
+import { Button, Card, ErrorState, Screen, Text } from '@/components/ui';
+import { formatFullDay } from '@/features/diary/DayNavigator';
+import { SyncNotice } from '@/features/diary/SyncNotice';
+import { CalorieCard, CalorieCardSkeleton } from '@/features/dashboard/CalorieCard';
+import { DashboardSection } from '@/features/dashboard/DashboardSection';
+import { WaterCard, WaterCardSkeleton } from '@/features/dashboard/WaterCard';
+import { WeightCard, WeightCardSkeleton } from '@/features/dashboard/WeightCard';
+import { useDashboard } from '@/features/dashboard/useDashboard';
 import { useProfile } from '@/features/profile/useProfile';
-import { todayIn } from '@/lib/date';
+import { useWaterMutations, useSuggestedWaterTarget } from '@/features/water/useWater';
+import { asLocalDay } from '@/lib/date';
 import { useSyncStatus } from '@/sync/useSyncStatus';
 import { useTheme } from '@/theme';
 
 /**
- * Home dashboard — Phase 0 shell.
+ * The dashboard.
  *
- * Real content arrives in Phase 1 (calorie ring, macro bars, water, training
- * status). What exists now is the structure those cards will occupy, plus the
- * two things that are genuinely working: the profile read from SQLite, and
- * live sync status.
+ * A summary, not a source of truth: every figure comes from the repository
+ * that owns it, through one composed read. Nothing here recalculates what the
+ * diary already computed.
+ *
+ * It reads entirely from SQLite, so it renders with the radio off and a glass
+ * of water logged on a plane appears immediately. Sync appears as a note, not
+ * as a blocker — the server is never treated as authoritative for what the
+ * device already knows.
  */
 export default function HomeScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { userId } = useAuth();
-  const { profile, isLoading } = useProfile();
+  const { profile } = useProfile();
+  const { summary, today, isLoading, error, refetch } = useDashboard();
+  const { addWater, setWaterGoal } = useWaterMutations();
+  const { targetMl: suggestedMl, weightKg } = useSuggestedWaterTarget();
   const syncStatus = useSyncStatus();
 
-  const today = profile ? todayIn(profile.time_zone) : null;
+  const system = profile?.unit_system ?? 'metric';
 
   return (
     <Screen scrollable>
@@ -32,21 +45,17 @@ export default function HomeScreen() {
           flexDirection: 'row',
           alignItems: 'flex-start',
           justifyContent: 'space-between',
-          marginTop: theme.spacing.xl,
+          marginTop: theme.spacing.lg,
           gap: theme.spacing.md,
         }}
       >
         <View style={{ flex: 1, gap: theme.spacing.xs }}>
           <Text variant="overline" color="muted">
-            {today ?? 'Today'}
+            {formatFullDay(asLocalDay(today))}
           </Text>
-          {isLoading ? (
-            <Skeleton height={34} width="70%" />
-          ) : (
-            <Text variant="displayMedium">
-              {profile?.display_name ? `Hi, ${profile.display_name}` : 'Welcome'}
-            </Text>
-          )}
+          <Text variant="displayMedium">
+            {profile?.display_name ? `Hi, ${profile.display_name}` : 'Today'}
+          </Text>
         </View>
 
         <Button
@@ -57,58 +66,93 @@ export default function HomeScreen() {
         />
       </View>
 
-      <Card>
-        <Text variant="overline" color="muted">
-          Today
-        </Text>
-        <Text variant="body" color="secondary">
-          Calories, macros, water and training will appear here once food logging lands in
-          Phase 1.
-        </Text>
-      </Card>
+      <SyncNotice status={syncStatus} />
 
-      <Card>
-        <Text variant="overline" color="muted">
-          Foundation status
-        </Text>
-        <StatusRow label="Signed in" value={userId ? 'Yes' : 'No'} />
-        <StatusRow
-          label="Local database"
-          value={isLoading ? 'Opening' : profile ? 'Ready' : 'Empty'}
-        />
-        <StatusRow
-          label="Sync"
-          value={describeSync(syncStatus.phase, syncStatus.pendingCount)}
-        />
-        {syncStatus.lastError ? (
-          <Text variant="caption" color="warning">
-            Last sync failed — it will retry automatically.
-          </Text>
-        ) : null}
-      </Card>
+      {error ? (
+        /*
+         * The whole summary is one read, so one failure means the whole card
+         * stack has nothing to show — but it must not take the screen down.
+         * The header, sync notice and navigation above stay usable.
+         */
+        <Card>
+          <ErrorState
+            title="Could not load today"
+            description="Your data is still on this device. Try again."
+            onRetry={refetch}
+          />
+        </Card>
+      ) : isLoading || !summary ? (
+        <View style={{ gap: theme.spacing.md }}>
+          <CalorieCardSkeleton />
+          <WaterCardSkeleton />
+          <WeightCardSkeleton />
+        </View>
+      ) : (
+        <View style={{ gap: theme.spacing.md }}>
+          {/*
+            Each card is isolated: a render fault in one leaves the others,
+            the header and the navigation working.
+          */}
+          <DashboardSection name="Calories">
+            <CalorieCard
+              totals={summary.food}
+              goal={summary.calorieGoal}
+              progress={summary.calories}
+              onPress={() => router.push('/goals')}
+            />
+          </DashboardSection>
 
-      <Text variant="caption" color="muted">
-        Phase 0 · foundation only. Food, training, scanning and AI are not built yet.
+          <DashboardSection name="Water">
+            <WaterCard
+              water={summary.water}
+              system={system}
+              onAdd={addWater}
+              onSetGoal={() =>
+                setWaterGoal({
+                  targetMl: suggestedMl,
+                  recommendedMl: suggestedMl,
+                  weightKg,
+                })
+              }
+              onOpenHistory={() => router.push('/water')}
+            />
+          </DashboardSection>
+
+          <DashboardSection name="Weight">
+            <WeightCard
+              trend={summary.weight}
+              system={system}
+              onPress={() => router.push('/(tabs)/progress')}
+            />
+          </DashboardSection>
+
+          <View style={{ flexDirection: 'row', gap: theme.spacing.sm }}>
+            <View style={{ flex: 1 }}>
+              <Button
+                label="Log food"
+                variant="secondary"
+                onPress={() => router.push('/(tabs)/diary')}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button
+                label="Progress"
+                variant="secondary"
+                onPress={() => router.push('/(tabs)/progress')}
+              />
+            </View>
+          </View>
+        </View>
+      )}
+
+      <Text
+        variant="caption"
+        color="muted"
+        align="center"
+        style={{ paddingVertical: theme.spacing.xl }}
+      >
+        Totals are for your local day, in {profile?.time_zone ?? 'your timezone'}.
       </Text>
     </Screen>
   );
-}
-
-function StatusRow({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 12 }}>
-      <Text variant="callout" color="secondary">
-        {label}
-      </Text>
-      <Text variant="callout" tabular>
-        {value}
-      </Text>
-    </View>
-  );
-}
-
-function describeSync(phase: string, pending: number): string {
-  if (phase === 'pushing') return 'Sending…';
-  if (phase === 'pulling') return 'Fetching…';
-  return pending > 0 ? `${pending} pending` : 'Up to date';
 }

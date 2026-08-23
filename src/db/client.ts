@@ -70,6 +70,8 @@ export function clearLocalUserData(db: SqlDatabase = getDatabase()): void {
   db.transaction(() => {
     db.exec('DELETE FROM sync_outbox');
     db.exec('DELETE FROM sync_state');
+    db.exec('DELETE FROM water_logs');
+    db.exec('DELETE FROM water_goals');
     db.exec('DELETE FROM nutrition_goals');
     db.exec('DELETE FROM weight_entries');
     db.exec('DELETE FROM food_logs');

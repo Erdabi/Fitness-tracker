@@ -133,9 +133,12 @@ src/
   features/
     ai/                 AIProvider interface + Zod schemas (Phase 4)
     auth/               Session state, auth operations, error mapping
+    dashboard/          The home summary and its cards
     diary/              The day view, logging, editing, frequent foods
     food/               Search, food detail, serving selection
     goals/              Calorie calculator, goal periods, targets
+    progress/           Weight trend, weekly summaries
+    water/              Water logging and goals
     profile/            Profile reads and writes
   lib/                  Dates, units, ids, Result type, logging,
                         nutrition and energy arithmetic, input validation
@@ -147,6 +150,7 @@ docs/architecture.html  Full architecture and roadmap
 docs/food-search.md     Ranking, matching, pagination, search performance
 docs/food-diary.md      The snapshot invariant, diary dates, aggregation
 docs/nutrition-goals.md Calculator formulas, safety floor, goal periods
+docs/water-and-dashboard.md  Water model, dashboard cost, progress summaries
 docs/food-data-sources.md  Sources, licensing, import procedure
 docs/database-setup.md  Applying migrations to a Supabase project
 ```

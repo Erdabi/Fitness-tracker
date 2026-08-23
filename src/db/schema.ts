@@ -23,6 +23,7 @@ export type ActivityLevelValue =
   | 'extra';
 export type GoalDirectionValue = 'lose' | 'maintain' | 'gain';
 export type GoalSource = 'calculated' | 'manual' | 'calculated_then_modified';
+export type WaterGoalSource = 'calculated' | 'manual';
 
 /** Meals in the order a day happens, which is also the order they render. */
 export const MEAL_SLOTS: readonly MealSlot[] = [
@@ -193,6 +194,49 @@ export interface WeightEntryRow extends SyncColumns {
   note: string | null;
   created_at: number;
 }
+
+
+/**
+ * One drink.
+ *
+ * `local_date` is the user's calendar day in `time_zone`, resolved at write
+ * time by the same rule the food diary uses. Amounts are millilitres; the unit
+ * shown is a display preference and is never stored.
+ */
+export interface WaterLogRow extends SyncColumns {
+  id: string;
+  user_id: string;
+  amount_ml: number;
+  /** Epoch ms. The instant it was drunk. */
+  consumed_at: number;
+  time_zone: string;
+  /** `YYYY-MM-DD` in `time_zone`. Never a UTC truncation. */
+  local_date: string;
+  note: string | null;
+  created_at: number;
+}
+
+/**
+ * One water goal period.
+ *
+ * `effective_to` is derived, exactly as on `nutrition_goals`, and never
+ * pushed. `calculated_ml` preserves the recommendation even when the user
+ * chose something else, and `basis_weight_kg` records what that
+ * recommendation was computed from.
+ */
+export interface WaterGoalRow extends SyncColumns {
+  id: string;
+  user_id: string;
+  effective_from: string;
+  effective_to: string | null;
+  target_ml: number;
+  source: WaterGoalSource;
+  calculated_ml: number | null;
+  basis_weight_kg: number | null;
+  note: string | null;
+  created_at: number;
+}
+
 
 /**
  * A cached catalogue food. Local only — never synced, never pushed.
@@ -387,6 +431,34 @@ export const TABLE_COLUMNS = {
     'user_id',
     'measured_on',
     'weight_kg',
+    'note',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  water_logs: [
+    'id',
+    'user_id',
+    'amount_ml',
+    'consumed_at',
+    'time_zone',
+    'local_date',
+    'note',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  water_goals: [
+    'id',
+    'user_id',
+    'effective_from',
+    'effective_to',
+    'target_ml',
+    'source',
+    'calculated_ml',
+    'basis_weight_kg',
     'note',
     'created_at',
     'updated_at',

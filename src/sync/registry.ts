@@ -1,4 +1,5 @@
 import { resyncGoalPeriods } from '@/db/repositories/goals';
+import { resyncWaterGoalPeriods } from '@/db/repositories/water';
 import { describeTable, type TableDescriptor } from './types';
 import type {
   FoodLogRow,
@@ -6,6 +7,8 @@ import type {
   NutritionGoalRow,
   ProfileRow,
   UserSettingsRow,
+  WaterGoalRow,
+  WaterLogRow,
   WeightEntryRow,
 } from '@/db/schema';
 
@@ -369,6 +372,84 @@ const weightEntries: TableDescriptor = describeTable<WeightEntryRow>({
   }),
 });
 
+/**
+ * Water logs.
+ *
+ * `local_date` is pushed, not re-derived: it is the user's day, settled at
+ * write time, and a receiving device in another timezone must not recompute it
+ * into its own. The server validates the pair through the same resolver the
+ * diary uses, so a client that got it wrong is rejected rather than accepted
+ * quietly.
+ */
+const waterLogs: TableDescriptor = describeTable<WaterLogRow>({
+  table: 'water_logs',
+  remoteTable: 'water_logs',
+  userColumn: 'user_id',
+  toRemote: (local) => ({
+    id: local.id,
+    user_id: local.user_id,
+    amount_ml: local.amount_ml,
+    consumed_at: new Date(local.consumed_at).toISOString(),
+    time_zone: local.time_zone,
+    local_date: local.local_date,
+    note: local.note,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    user_id: String(remote.user_id),
+    amount_ml: asNumeric(remote.amount_ml) ?? 0,
+    consumed_at: toEpochMs(remote.consumed_at) ?? Date.now(),
+    time_zone: asNullableString(remote.time_zone) ?? 'UTC',
+    local_date: asNullableString(remote.local_date) ?? '1970-01-01',
+    note: asNullableString(remote.note),
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
+/**
+ * Water goal periods.
+ *
+ * `effective_to` is omitted on push for the same reason it is on nutrition
+ * goals: it is derived on both sides, so changing a target is exactly one row
+ * and there is no pair of writes that has to land in order.
+ */
+const waterGoals: TableDescriptor = describeTable<WaterGoalRow>({
+  table: 'water_goals',
+  remoteTable: 'water_goals',
+  userColumn: 'user_id',
+  afterPull: (db, userId) => resyncWaterGoalPeriods(userId, db),
+  toRemote: (local) => ({
+    id: local.id,
+    user_id: local.user_id,
+    effective_from: local.effective_from,
+    target_ml: local.target_ml,
+    source: local.source,
+    calculated_ml: local.calculated_ml,
+    basis_weight_kg: local.basis_weight_kg,
+    note: local.note,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    user_id: String(remote.user_id),
+    effective_from: asNullableString(remote.effective_from) ?? '1970-01-01',
+    effective_to: asNullableString(remote.effective_to),
+    target_ml: asNumeric(remote.target_ml) ?? 2000,
+    source: (asNullableString(remote.source) ?? 'manual') as WaterGoalRow['source'],
+    calculated_ml: asNumeric(remote.calculated_ml),
+    basis_weight_kg: asNumeric(remote.basis_weight_kg),
+    note: asNullableString(remote.note),
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
 export const SYNC_REGISTRY = [
   profiles,
   userSettings,
@@ -376,4 +457,6 @@ export const SYNC_REGISTRY = [
   foodLogs,
   nutritionGoals,
   weightEntries,
+  waterLogs,
+  waterGoals,
 ] as const;

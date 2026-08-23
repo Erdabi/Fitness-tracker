@@ -9,7 +9,9 @@ export type SyncableTable =
   | 'food_recents'
   | 'food_logs'
   | 'nutrition_goals'
-  | 'weight_entries';
+  | 'weight_entries'
+  | 'water_logs'
+  | 'water_goals';
 
 /** Postgres tables the engine may address, taken from the generated types. */
 export type RemoteTable = keyof Database['public']['Tables'];

@@ -7,7 +7,7 @@ import type {
   Sex,
 } from '../schema';
 import type { SqlDatabase } from '../types';
-import { addDays, asLocalDay, type LocalDay } from '@/lib/date';
+import { type LocalDay } from '@/lib/date';
 import {
   calorieFloorFor,
   type CalculatedTargets,
@@ -15,6 +15,7 @@ import {
 } from '@/lib/energy';
 import { newId } from '@/lib/id';
 import { withOutbox } from '@/sync/outbox';
+import { resyncPeriodChain } from './periods';
 
 /**
  * Goal periods.
@@ -362,51 +363,19 @@ export function listGoalPeriods(
 /* -------------------------------------------------------- period boundaries */
 
 /**
- * Recomputes every period's end date for one user.
+ * Recomputes every period's end date for this user's nutrition goals.
  *
- * Mirrors `resync_goal_periods()` in Postgres exactly, and for the same
- * reason: `effective_to` is derived from the next period's start, so a client
- * that had to send it would need two writes to land in order — a guarantee an
- * offline outbox cannot make.
- *
- * Deliberately outside the outbox, and deliberately not touching `updated_at`.
- * The column is server-derived, the descriptor omits it on push, and bumping
- * `updated_at` here would make a purely local recomputation look like a user
- * edit to the conflict resolver.
+ * The chain logic itself lives in `resyncPeriodChain`, shared with water
+ * goals — the two have identical period semantics, and the same-day
+ * supersession rule is exactly the kind of subtlety that drifts when it is
+ * written twice. The server generalised the same way, into
+ * `resync_period_chain()`.
  */
 export function resyncGoalPeriods(
   userId: string,
   db: SqlDatabase = getDatabase(),
 ): void {
-  const periods = db.all<{ id: string; effective_from: string; effective_to: string | null }>(
-    `SELECT id, effective_from, effective_to FROM nutrition_goals
-      WHERE user_id = ? AND deleted_at IS NULL
-      ORDER BY effective_from ASC, created_at ASC, id ASC`,
-    [userId],
-  );
-
-  db.transaction(() => {
-    periods.forEach((period, index) => {
-      const next = periods[index + 1];
-      const from = asLocalDay(period.effective_from);
-
-      const effectiveTo =
-        next === undefined
-          ? null
-          : // A same-day successor means this period never applied: it ends
-            // the day before it started, an empty range covering nothing.
-            next.effective_from <= period.effective_from
-            ? addDays(from, -1)
-            : addDays(asLocalDay(next.effective_from), -1);
-
-      if (period.effective_to !== effectiveTo) {
-        db.run('UPDATE nutrition_goals SET effective_to = ? WHERE id = ?', [
-          effectiveTo,
-          period.id,
-        ]);
-      }
-    });
-  });
+  resyncPeriodChain('nutrition_goals', userId, db);
 }
 
 function readEffectiveTo(db: SqlDatabase, id: string): string | null {

@@ -555,6 +555,93 @@ export interface Database {
           },
         ];
       };
+      water_logs: {
+        Row: {
+          id: string;
+          user_id: string;
+          amount_ml: number;
+          consumed_at: string;
+          time_zone: string;
+          /** `YYYY-MM-DD` in `time_zone`. Never a UTC truncation. */
+          local_date: string;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          amount_ml: number;
+          consumed_at?: string;
+          time_zone: string;
+          /** Optional: derived from `consumed_at` in `time_zone` when omitted. */
+          local_date?: string | null;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          amount_ml?: number;
+          consumed_at?: string;
+          time_zone?: string;
+          local_date?: string | null;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'water_logs_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      water_goals: {
+        Row: {
+          id: string;
+          user_id: string;
+          effective_from: string;
+          /** Derived by trigger. NULL = current period. */
+          effective_to: string | null;
+          target_ml: number;
+          source: 'calculated' | 'manual';
+          calculated_ml: number | null;
+          basis_weight_kg: number | string | null;
+          note: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        /* `effective_to` is absent by design: the server derives it. */
+        Insert: {
+          id?: string;
+          user_id: string;
+          effective_from: string;
+          target_ml: number;
+          source: 'calculated' | 'manual';
+          calculated_ml?: number | null;
+          basis_weight_kg?: number | null;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          target_ml?: number;
+          source?: 'calculated' | 'manual';
+          calculated_ml?: number | null;
+          basis_weight_kg?: number | null;
+          note?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'water_goals_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
     };
     Views: Record<never, never>;
     Functions: {
@@ -590,6 +677,7 @@ export interface Database {
       activity_level: 'sedentary' | 'light' | 'moderate' | 'very' | 'extra';
       goal_direction: 'lose' | 'maintain' | 'gain';
       goal_source: 'calculated' | 'manual' | 'calculated_then_modified';
+      water_goal_source: 'calculated' | 'manual';
     };
     CompositeTypes: Record<never, never>;
   };

@@ -299,13 +299,36 @@ begin
     coalesce('every set_updated_at trigger fires on both — wrong: ' || insert_only,
              'every set_updated_at trigger fires BEFORE INSERT OR UPDATE'));
 
+  /*
+   * Counted against the schema rather than against a number written here.
+   *
+   * This began as a literal 12 and went stale the moment water tracking added
+   * two tables. The property that actually matters is that the two sets are
+   * the same size — every table carrying `updated_at` has the trigger and
+   * nothing else does — which is true at any table count and cannot rot.
+   */
   perform assert(
     (select count(*) from pg_trigger tg
       join pg_class c on c.oid = tg.tgrelid
       join pg_namespace n on n.oid = c.relnamespace
      where tg.tgfoid = 'public.set_updated_at'::regproc
-       and n.nspname = 'public' and not tg.tgisinternal) = 12,
-    'all twelve synchronised tables are covered');
+       and n.nspname = 'public' and not tg.tgisinternal)
+    =
+    (select count(*) from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      join pg_attribute a on a.attrelid = c.oid
+                         and a.attname = 'updated_at'
+                         and a.attnum > 0
+                         and not a.attisdropped
+     where n.nspname = 'public' and c.relkind = 'r'),
+    format('every synchronised table is covered, and only those (%s tables)',
+           (select count(*) from pg_class c
+              join pg_namespace n on n.oid = c.relnamespace
+              join pg_attribute a on a.attrelid = c.oid
+                                 and a.attname = 'updated_at'
+                                 and a.attnum > 0
+                                 and not a.attisdropped
+             where n.nspname = 'public' and c.relkind = 'r')));
 end $$;
 
 do $$

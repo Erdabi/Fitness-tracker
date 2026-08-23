@@ -71,6 +71,10 @@ export default function RootLayout() {
                       name="goals/calculator"
                       options={{ headerShown: true, title: 'Calorie calculator' }}
                     />
+                    <Stack.Screen
+                      name="water/index"
+                      options={{ headerShown: true, title: 'Water' }}
+                    />
                   </Stack>
                 </AuthProvider>
               </QueryClientProvider>
