@@ -13,24 +13,33 @@ import type { LabelExtraction, MealEstimation } from './schemas';
  */
 
 /**
- * Reference to an uploaded image.
+ * An image to analyse.
  *
- * A storage path, never image bytes. The upload happens first so a scan can be
- * retried or re-run later without asking the user to photograph the label
- * again, and so the function payload stays small.
+ * ── Changed from the Phase 0 sketch, deliberately ──────────────────────────
+ *
+ * Phase 0 declared this as a storage path, so a scan could be re-run later
+ * without re-photographing the label. That was reconsidered against the
+ * requirement to prefer temporary processing: a bucket means storage RLS, a
+ * retention policy and a cleanup job, all for photographs of people's food and
+ * kitchens. Sending the bytes means the image exists for one request and is
+ * never written down — no bucket, nothing to leak, nothing to purge.
+ *
+ * The cost is a larger request body, which the size and dimension limits in
+ * `prepareImage` bound.
  */
-export interface ImageRef {
-  /** Path within the private `scans` bucket, e.g. `<user-id>/<scan-id>.jpg`. */
-  readonly storagePath: string;
-  /** Content hash, used to short-circuit repeat scans of the same label. */
-  readonly sha256: string;
+export interface ScanImage {
+  /** Base64-encoded bytes, with no `data:` prefix. */
+  readonly data: string;
+  readonly mediaType: 'image/jpeg' | 'image/png' | 'image/webp';
+  /** Decoded size, for the client-side guard and for error messages. */
+  readonly byteLength: number;
 }
 
 export interface AIProvider {
   /** Extracts structured nutrition facts from a photograph of a label. */
-  analyzeNutritionLabel(image: ImageRef): Promise<Result<LabelExtraction>>;
+  analyzeNutritionLabel(image: ScanImage): Promise<Result<LabelExtraction>>;
   /** Estimates items and portions from a photograph of a meal. */
-  analyzeFoodPhoto(image: ImageRef): Promise<Result<MealEstimation>>;
+  analyzeFoodPhoto(image: ScanImage): Promise<Result<MealEstimation>>;
 }
 
 /**

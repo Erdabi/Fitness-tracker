@@ -24,7 +24,12 @@ import { useTheme } from '@/theme';
 export default function FoodSearchScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { meal, day } = useLocalSearchParams<{ meal?: string; day?: string }>();
+  const { meal, day, q } = useLocalSearchParams<{
+    meal?: string;
+    day?: string;
+    /** A search another screen already knows the words for. */
+    q?: string;
+  }>();
   const {
     query,
     results,
@@ -36,7 +41,7 @@ export default function FoodSearchScreen() {
     showingRecents,
     setQuery,
     loadMore,
-  } = useFoodSearch();
+  } = useFoodSearch(q ?? '');
 
   const handleSelect = useCallback(
     (result: FoodSearchResult) => {

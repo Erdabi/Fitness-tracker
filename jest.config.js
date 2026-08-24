@@ -20,6 +20,12 @@ module.exports = {
       testMatch: [
         '<rootDir>/src/**/__tests__/**/*.node.test.ts',
         '<rootDir>/tools/**/__tests__/**/*.node.test.ts',
+        // The Edge Functions run under Deno, which is not installed in CI.
+        // Their pure helpers — image signatures, limits — are plain TypeScript
+        // with no Deno globals, so they are exercised here rather than left
+        // untested. Anything that touches `Deno.*` is not covered by this and
+        // is verified against a deployed function instead; see docs/scanning.md.
+        '<rootDir>/supabase/functions/**/__tests__/**/*.node.test.ts',
       ],
       transform: {
         '^.+\\.tsx?$': ['babel-jest', { configFile: './babel.config.js' }],

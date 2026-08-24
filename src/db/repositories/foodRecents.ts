@@ -44,6 +44,14 @@ export function cacheFood(
   result: FoodSearchResult,
   servings: readonly Serving[],
   db: SqlDatabase = getDatabase(),
+  /**
+   * The code this food was found by, when it was reached by scanning.
+   *
+   * Recorded so the next scan of the same product resolves from the device.
+   * Scanning is most useful where connectivity is worst, and without this the
+   * cache could render a food offline but never be *reached* offline.
+   */
+  barcode?: string | null,
 ): void {
   const now = Date.now();
 
@@ -52,8 +60,8 @@ export function cacheFood(
       `INSERT INTO food_cache
          (food_id, name, brand_name, source_id, is_verified, is_own,
           base_unit, base_amount, calories, protein_g, carbohydrates_g, fat_g,
-          cached_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          barcode, cached_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(food_id) DO UPDATE SET
          name = excluded.name,
          brand_name = excluded.brand_name,
@@ -66,6 +74,8 @@ export function cacheFood(
          protein_g = excluded.protein_g,
          carbohydrates_g = excluded.carbohydrates_g,
          fat_g = excluded.fat_g,
+         -- Keep a known code if this refresh did not come from a scan.
+         barcode = COALESCE(excluded.barcode, food_cache.barcode),
          cached_at = excluded.cached_at`,
       [
         result.foodId,
@@ -80,6 +90,7 @@ export function cacheFood(
         result.protein_g,
         result.carbohydrates_g,
         result.fat_g,
+        barcode ?? null,
         now,
       ],
     );
@@ -137,6 +148,46 @@ export function getCachedServings(
     'SELECT * FROM food_cache_servings WHERE food_id = ? ORDER BY sort_order',
     [foodId],
   );
+}
+
+/**
+ * A cached food, by the barcode it was found with.
+ *
+ * The offline half of barcode scanning: a product scanned before resolves with
+ * no network at all. Returns the most recently cached match, since a user may
+ * have both a catalogue food and their own custom food on one code.
+ */
+export function getCachedFoodByBarcode(
+  barcode: string,
+  db: SqlDatabase = getDatabase(),
+): FoodSearchResult | null {
+  const row = db.get<FoodCacheRow>(
+    `SELECT * FROM food_cache
+      WHERE barcode = ?
+      ORDER BY cached_at DESC
+      LIMIT 1`,
+    [barcode],
+  );
+
+  if (!row) return null;
+
+  return {
+    foodId: row.food_id,
+    name: row.name,
+    brandName: row.brand_name,
+    sourceId: row.source_id as FoodSearchResult['sourceId'],
+    isVerified: row.is_verified === 1,
+    isOwn: row.is_own === 1,
+    baseUnit: row.base_unit,
+    baseAmount: row.base_amount,
+    calories: row.calories,
+    protein_g: row.protein_g,
+    carbohydrates_g: row.carbohydrates_g,
+    fat_g: row.fat_g,
+    defaultServing: defaultServingFor(row.food_id, db),
+    matchKind: 'barcode',
+    score: 1000,
+  };
 }
 
 export function countCachedFoods(db: SqlDatabase = getDatabase()): number {

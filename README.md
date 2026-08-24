@@ -56,6 +56,8 @@ After that, `npm start` connects to the development build as usual.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run lint` | ESLint |
 | `npm run format` | Prettier |
+| `npm run check:bundle` | Export a real bundle and grep it for leaked secrets |
+| `./scripts/verify-db.sh` | Apply every migration to a throwaway Postgres and run the SQL suites |
 
 ---
 
@@ -112,7 +114,9 @@ the cursors — two people can share a phone.
   what actually stop one user reading another's data.
 - Every policy sets both `USING` and `WITH CHECK`. Without `WITH CHECK`, a user
   can reassign their row to someone else on update.
-- RLS is `FORCE`d, so the table owner does not bypass it.
+- RLS is **enabled but not forced**. Forcing it locks the table owner out of
+  its own tables, which breaks migrations and the ingestion importer; the
+  boundary that matters is the policy set, and no application role is an owner.
 - Deletes are soft. A hard delete is invisible to a delta pull, so offline
   clients would keep their copy forever.
 - `EXPO_PUBLIC_*` values are compiled into the binary. Only the Supabase URL
@@ -131,13 +135,15 @@ src/
   config/               Validated environment
   db/                   SQLite: migrations, migrator, schema, repositories
   features/
-    ai/                 AIProvider interface + Zod schemas (Phase 4)
+    ai/                 The AI boundary: wire contract, normalisation,
+                        the Edge Function-backed provider, image preparation
     auth/               Session state, auth operations, error mapping
     dashboard/          The home summary and its cards
     diary/              The day view, logging, editing, frequent foods
     food/               Search, food detail, serving selection
     goals/              Calorie calculator, goal periods, targets
     progress/           Weight trend, weekly summaries
+    scan/               Barcode gate, capture, review drafts, confirm
     water/              Water logging and goals
     profile/            Profile reads and writes
   lib/                  Dates, units, ids, Result type, logging,
@@ -145,12 +151,15 @@ src/
   state/                React Query client
   sync/                 Outbox, merge rules, engine, registry
   theme/                Tokens and theme provider
+supabase/functions/     Edge Functions (Deno). Server-only — the API key
+                        lives here and app code may not import from it.
 supabase/migrations/    Postgres schema — the source of truth
 docs/architecture.html  Full architecture and roadmap
 docs/food-search.md     Ranking, matching, pagination, search performance
 docs/food-diary.md      The snapshot invariant, diary dates, aggregation
 docs/nutrition-goals.md Calculator formulas, safety floor, goal periods
 docs/water-and-dashboard.md  Water model, dashboard cost, progress summaries
+docs/scanning.md        Barcodes, label reading, food photos, where the key lives
 docs/food-data-sources.md  Sources, licensing, import procedure
 docs/database-setup.md  Applying migrations to a Supabase project
 ```
@@ -176,9 +185,24 @@ Two Jest projects:
 
 Naming decides the project: `*.node.test.ts` or `*.rn.test.tsx`.
 
-A schema-drift test asserts that the shipped migration SQL actually produces
-the columns the TypeScript row types assume — otherwise a mismatch surfaces as
-a runtime error on someone's phone.
+Two drift tests guard the places where the same thing is written twice:
+
+- A **schema-drift** test asserts that the shipped migration SQL actually
+  produces the columns the TypeScript row types assume — otherwise a mismatch
+  surfaces as a runtime error on someone's phone.
+- An **AI contract-drift** test compares `src/features/ai/schemas.ts` with its
+  Deno mirror in `supabase/functions/_shared/contract.ts`. They cannot import
+  each other, so nothing but a test keeps them in step.
+
+Two gates run outside Jest, because neither can be checked from inside the
+process it is checking:
+
+- `./scripts/verify-db.sh` applies every migration to a real PostgreSQL 16 and
+  runs the RLS suites against it. A broken policy in production is a
+  data-exposure incident, not a failed script.
+- `npm run check:bundle` exports a real Metro bundle and greps it for API keys,
+  service-role references and server-only code. Reading the source proves
+  intent; reading the bundle proves outcome.
 
 ---
 

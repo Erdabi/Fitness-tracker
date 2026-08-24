@@ -8,6 +8,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { ErrorState, LoadingState } from '@/components/ui';
 import { openDatabase } from '@/db/client';
+import { registerAIProvider } from '@/features/ai/register';
 import { AuthProvider } from '@/features/auth/AuthProvider';
 import { logger } from '@/lib/logger';
 import { queryClient } from '@/state/queryClient';
@@ -25,6 +26,10 @@ export default function RootLayout() {
   useEffect(() => {
     try {
       openDatabase();
+      // Scanning goes through Edge Functions, which hold the API key. Chosen
+      // here so there is exactly one place the app decides what the AI
+      // boundary is backed by.
+      registerAIProvider();
       setDbState('ready');
     } catch (cause) {
       // Without local storage the app cannot function — every read goes
@@ -74,6 +79,24 @@ export default function RootLayout() {
                     <Stack.Screen
                       name="water/index"
                       options={{ headerShown: true, title: 'Water' }}
+                    />
+                    {/*
+                      The barcode scanner owns the whole screen — a camera
+                      preview under a navigation bar reads as a bug — so it is
+                      the one route here without a header.
+                    */}
+                    <Stack.Screen name="scan/barcode" options={{ headerShown: false }} />
+                    <Stack.Screen
+                      name="scan/label"
+                      options={{ headerShown: true, title: 'Nutrition label' }}
+                    />
+                    <Stack.Screen
+                      name="scan/photo"
+                      options={{ headerShown: true, title: 'Food photo' }}
+                    />
+                    <Stack.Screen
+                      name="food/custom"
+                      options={{ headerShown: true, title: 'Your own food' }}
                     />
                   </Stack>
                 </AuthProvider>

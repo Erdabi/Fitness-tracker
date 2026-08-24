@@ -261,6 +261,8 @@ export interface FoodCacheRow {
   sugar_g: number | null;
   saturated_fat_g: number | null;
   sodium_mg: number | null;
+  /** The code this food was found by, when it was reached via a scan. */
+  barcode: string | null;
   cached_at: number;
 }
 
@@ -345,6 +347,7 @@ export const TABLE_COLUMNS = {
     'sugar_g',
     'saturated_fat_g',
     'sodium_mg',
+    'barcode',
     'cached_at',
   ],
   food_cache_servings: [

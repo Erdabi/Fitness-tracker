@@ -22,5 +22,15 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],
-  "exclude": ["node_modules", "dist", ".expo"]
+  /*
+   * Edge Functions are excluded because they are a different runtime.
+   * `supabase/functions` runs on Deno: it uses `npm:` import specifiers, the
+   * `Deno` global, and `.ts` extensions in relative imports, none of which the
+   * React Native compilation understands. Type-checking them here would
+   * produce dozens of false errors and would also, more subtly, let the app
+   * `import` from a server file without complaint — which is exactly the
+   * boundary the AI architecture depends on. A lint rule enforces that
+   * separation directly; see eslint.config.js.
+   */
+  "exclude": ["node_modules", "dist", ".expo", "supabase/functions"]
 }

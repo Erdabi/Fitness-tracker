@@ -450,6 +450,36 @@ export const MIGRATIONS: readonly Migration[] = [
          WHERE deleted_at IS NULL`,
     ],
   },
+  {
+    version: 6,
+    name: 'cached_food_barcodes',
+    statements: [
+      /*
+       * The barcode a cached food was found by.
+       *
+       * Scanning is most useful exactly where connectivity is worst — the back
+       * of a supermarket — so a product scanned once should resolve from the
+       * device forever after. Without this, `food_cache` could render a food
+       * offline but could not be *reached* offline, because the only route in
+       * was a server lookup.
+       *
+       * A column on the existing cache rather than a table of its own: it is a
+       * property of the cached food, it is written by the same code path, and
+       * it is cleared by the same eviction.
+       */
+      `ALTER TABLE food_cache ADD COLUMN barcode TEXT`,
+
+      /*
+       * Not unique. Two of a user's foods may legitimately carry the same code
+       * — an own-brand product and a custom food created from it — and a
+       * unique index would make caching the second one fail rather than simply
+       * resolve to the first.
+       */
+      `CREATE INDEX idx_food_cache_barcode
+         ON food_cache(barcode)
+         WHERE barcode IS NOT NULL`,
+    ],
+  },
 ];
 
 /** Highest migration version known to this build. */

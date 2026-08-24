@@ -40,19 +40,24 @@ export interface FoodSearchState {
   readonly showingRecents: boolean;
 }
 
-export function useFoodSearch() {
+/**
+ * @param initialQuery Seeds the box on mount. Used when another screen already
+ *   knows what is being looked for — a food photo naming "grilled chicken
+ *   breast", for instance — so the user is not asked to retype it.
+ */
+export function useFoodSearch(initialQuery = '') {
   const { userId } = useAuth();
 
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(initialQuery);
   const [state, setState] = useState<FoodSearchState>({
-    query: '',
+    query: initialQuery,
     results: [],
     origin: 'recent',
     isSearching: false,
     isLoadingMore: false,
     error: null,
     hasMore: false,
-    showingRecents: true,
+    showingRecents: initialQuery.length < MIN_QUERY_LENGTH,
   });
 
   const cursorRef = useRef<SearchCursor | null>(null);
