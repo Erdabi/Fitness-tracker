@@ -522,14 +522,33 @@ begin
    * DST and travel behaviour drifts apart between two features that are meant
    * to agree.
    */
+  /*
+   * Derived from the schema rather than counted by hand.
+   *
+   * This used to assert a literal 2, which went stale the moment a third
+   * table needed a local day — and, worse, would have kept passing if
+   * somebody had added a *second* resolver function alongside it. The
+   * invariant that actually matters is that every trigger resolving a local
+   * day is bound to the one shared function, so that is what is asserted.
+   */
   perform assert(
     (select count(*) from pg_trigger tg
       join pg_class c on c.oid = tg.tgrelid
       join pg_namespace n on n.oid = c.relnamespace
      where n.nspname = 'public'
        and not tg.tgisinternal
-       and tg.tgfoid = 'public.resolve_local_date'::regproc) = 2,
-    'food_logs and water_logs share one local-date resolver');
+       and tg.tgname like '%resolve_day%'
+       and tg.tgfoid <> 'public.resolve_local_date'::regproc) = 0,
+    'every local-day trigger is bound to the shared resolver');
+
+  perform assert(
+    (select count(*) from pg_trigger tg
+      join pg_class c on c.oid = tg.tgrelid
+      join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'public'
+       and not tg.tgisinternal
+       and tg.tgfoid = 'public.resolve_local_date'::regproc) > 1,
+    'and more than one table shares it, so it is genuinely general');
 
   perform assert(
     not exists (select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace

@@ -250,3 +250,177 @@ describe('the app bundle is checked, not just the source', () => {
     expect(pkg.scripts['check:bundle']).toBeDefined();
   });
 });
+
+/**
+ * Architectural non-regressions.
+ *
+ * Section Q of Milestone 7 asks for these explicitly, and each one is a rule
+ * that has already been broken once in this project's history or would be easy
+ * to break by accident: a second sync engine, a second local-date
+ * implementation, or FORCE ROW LEVEL SECURITY reintroduced by copying an older
+ * migration.
+ */
+describe('one sync engine, one local-date rule', () => {
+  it('has exactly one sync engine', () => {
+    /*
+     * An engine is a file that walks the registry *and* drains the outbox.
+     * `outbox.ts` defines `claimReady` but does not decide what to send, and
+     * a descriptor knows about one table; only an engine does both.
+     */
+    const engines = SOURCES.filter((file) => {
+      const source = readFileSync(file, 'utf8');
+      return /SYNC_REGISTRY/.test(source) && /claimReady\(/.test(source);
+    });
+
+    expect(engines.map(named)).toEqual(['src/sync/engine.ts']);
+  });
+
+  it('routes every local write through the one outbox', () => {
+    /*
+     * A repository writing without `withOutbox` would be silent data loss on
+     * any device closed before the next sync.
+     *
+     * `periods.ts` is the one deliberate exception and is named here rather
+     * than excluded by a pattern, so adding a second exception is a decision
+     * somebody has to write down. It rebuilds `effective_to`, which is
+     * *derived* on both sides rather than authored — enqueueing it would push
+     * a computed column straight back at the server as though the user had
+     * edited it. The descriptor contract says so in as many words.
+     */
+    const DERIVED_ONLY = ['src/db/repositories/periods.ts'];
+
+    const writers = SOURCES.filter(
+      (file) =>
+        /src\/db\/repositories\//.test(file) &&
+        /db\.run\(\s*\n?\s*`\s*(INSERT|UPDATE)/i.test(readFileSync(file, 'utf8')),
+    );
+
+    expect(writers.length).toBeGreaterThan(3);
+
+    for (const file of writers) {
+      if (DERIVED_ONLY.includes(named(file))) continue;
+
+      const source = readFileSync(file, 'utf8');
+      expect({ file: named(file), usesOutbox: /withOutbox|insertRow|updateRow/.test(source) })
+        .toEqual({ file: named(file), usesOutbox: true });
+    }
+  });
+
+  it('keeps the one outbox-free writer to derived columns', () => {
+    const source = readFileSync(join(ROOT, 'src/db/repositories/periods.ts'), 'utf8');
+
+    // Only `effective_to`, and nothing that carries user intent.
+    const assignments = [...source.matchAll(/SET\s+([a-z_]+)\s*=/gi)].map(
+      (match) => match[1],
+    );
+
+    expect(new Set(assignments)).toEqual(new Set(['effective_to']));
+    expect(source).not.toContain('withOutbox');
+  });
+
+  it('derives a local day in exactly one place', () => {
+    // `localDayFor` is that place. A second implementation would disagree
+    // about DST and about travel, silently and only for some users.
+    const implementors = SOURCES.filter((file) => {
+      const source = readFileSync(file, 'utf8');
+      return /export function localDayFor/.test(source);
+    });
+
+    expect(implementors.map(named)).toEqual(['src/lib/date.ts']);
+  });
+
+  it('never truncates a UTC timestamp into a diary day', () => {
+    /*
+     * The exact shortcut every milestone has forbidden by name.
+     *
+     * `src/lib/date.ts` is excluded because it is the one file doing calendar
+     * arithmetic rather than instant arithmetic: `addDays` shifts a
+     * `Date.UTC(y, m, d)` — a date with no time and no zone — so truncating it
+     * is the correct operation and not a timezone bug. Everywhere else, the
+     * value being truncated is an instant, and the result would be a UTC day
+     * masquerading as the user's.
+     */
+    const CALENDAR_ARITHMETIC = ['src/lib/date.ts'];
+
+    for (const file of SOURCES) {
+      if (CALENDAR_ARITHMETIC.includes(named(file))) continue;
+
+      const source = readFileSync(file, 'utf8');
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+
+      expect({
+        file: named(file),
+        truncates: /toISOString\(\)\s*\.\s*slice\(0,\s*10\)/.test(code),
+      }).toEqual({ file: named(file), truncates: false });
+    }
+  });
+
+  it('shares one local-date resolver server-side too', () => {
+    /*
+     * Migrations are append-only, so a resolver that *existed* still appears
+     * in the file that created it — `resolve_food_log_day` was created in
+     * Milestone 4 and dropped in Milestone 5, and both statements are still on
+     * disk. What matters is the schema that results: every resolver ever
+     * created is either the shared one or explicitly dropped again.
+     *
+     * The live-database version of this — that every local-day trigger is
+     * bound to `resolve_local_date` and that nothing else survives — is
+     * asserted against a real PostgreSQL in `supabase/tests/water.test.sql`.
+     * This is the cheap file-level guard that catches a second resolver being
+     * *added*, before anyone runs the database suite.
+     */
+    const migrations = join(ROOT, 'supabase/migrations');
+    const files = readdirSync(migrations)
+      .filter((name) => name.endsWith('.sql'))
+      .sort();
+
+    const created = new Set<string>();
+
+    for (const name of files) {
+      const sql = readFileSync(join(migrations, name), 'utf8');
+
+      for (const match of sql.matchAll(
+        /create (?:or replace )?function public\.(resolve_\w+)\(/g,
+      )) {
+        created.add(match[1]!);
+      }
+
+      for (const match of sql.matchAll(/drop function public\.(resolve_\w+)\(/g)) {
+        created.delete(match[1]!);
+      }
+    }
+
+    expect([...created]).toEqual(['resolve_local_date']);
+  });
+
+});
+
+describe('row-level security stays enabled and unforced', () => {
+  it('reintroduces FORCE ROW LEVEL SECURITY nowhere', () => {
+    const migrations = join(ROOT, 'supabase/migrations');
+
+    for (const name of readdirSync(migrations).filter((file) => file.endsWith('.sql'))) {
+      const sql = readFileSync(join(migrations, name), 'utf8').toLowerCase();
+      // Forcing it locks the table owner out of its own tables, which breaks
+      // migrations and the ingestion importer.
+      expect({ migration: name, forces: /force row level security/.test(sql) }).toEqual({
+        migration: name,
+        forces: false,
+      });
+    }
+  });
+
+  it('enables it on every user-owned table it adds', () => {
+    const training = readFileSync(
+      join(ROOT, 'supabase/migrations/20260827000001_training.sql'),
+      'utf8',
+    );
+
+    for (const table of ['exercises', 'workouts', 'workout_exercises', 'workout_sets']) {
+      expect(training).toContain(`alter table public.${table}`);
+      expect(training).toMatch(
+        new RegExp(`alter table public\\.${table}\\s+enable row level security`),
+      );
+    }
+  });
+});

@@ -29,11 +29,25 @@ export interface FakeRemote extends RemoteAdapter {
   find(table: RemoteTable, id: string): AnyRow | undefined;
   /** Requests served since construction, for asserting retry behaviour. */
   readonly stats: { fetches: number; upserts: number; deletes: number };
+  /**
+   * Accepted upserts, oldest first, for asserting arrival ORDER.
+   *
+   * Added for training, which is the first feature with a three-level
+   * dependency chain — a set references a workout exercise references a
+   * workout, and the server's foreign keys reject any other order. Nothing
+   * sequences that by hand: the outbox drains by insertion id. This log is how
+   * that guarantee is checked rather than assumed.
+   *
+   * Only successful writes are recorded; a rejected one never reached the
+   * server, so it is not an arrival.
+   */
+  readonly upsertLog: readonly { table: RemoteTable; id: string }[];
 }
 
 export function createFakeRemote(options: { startAt?: number } = {}): FakeRemote {
   const tables = new Map<string, Map<string, AnyRow>>();
   const stats = { fetches: 0, upserts: 0, deletes: 0 };
+  const upsertLog: { table: RemoteTable; id: string }[] = [];
 
   let online = true;
   let writeFailuresRemaining = 0;
@@ -89,6 +103,7 @@ export function createFakeRemote(options: { startAt?: number } = {}): FakeRemote
 
   return {
     stats,
+    upsertLog,
 
     goOffline() {
       online = false;
@@ -144,6 +159,7 @@ export function createFakeRemote(options: { startAt?: number } = {}): FakeRemote
       }
 
       const id = String(row.id);
+      upsertLog.push({ table, id });
       const existing = tableOf(table).get(id);
       // `updated_at` is server-assigned; a client-supplied value is discarded,
       // mirroring the set_updated_at trigger.

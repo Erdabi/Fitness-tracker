@@ -44,6 +44,39 @@ npx expo run:ios      # or: npx expo run:android
 
 After that, `npm start` connects to the development build as usual.
 
+### Running on an Android emulator (LDPlayer, BlueStacks, Android Studio)
+
+The app uses native modules — SQLite, SecureStore, Camera — so it needs a
+development build. Any x86_64 Android emulator works; LDPlayer is x86_64 and is
+what these instructions assume.
+
+```bash
+# 1. Start the emulator first, then confirm adb can see it.
+#    LDPlayer's default adb port is 5555; BlueStacks uses 5555 too.
+adb connect 127.0.0.1:5555
+adb devices                      # expect one "device", not "offline"
+
+# 2. Build and install the development build. This runs prebuild for you,
+#    compiles the native project, and installs the APK on the connected device.
+npx expo run:android
+
+# 3. On later runs, the APK is already installed — just serve the JS:
+npm start
+#    then press "a", or open the app and shake to set the dev-server URL.
+```
+
+Requirements for step 2: a JDK 17, the Android SDK with `ANDROID_HOME` set, and
+platform-tools on your `PATH`.
+
+If the emulator cannot reach Metro on `localhost`, forward the port:
+
+```bash
+adb reverse tcp:8081 tcp:8081
+```
+
+`android/` is generated, not committed — `npx expo run:android` recreates it.
+Delete it and re-run if a native dependency changes.
+
 ---
 
 ## Commands
@@ -144,6 +177,7 @@ src/
     goals/              Calorie calculator, goal periods, targets
     progress/           Weight trend, weekly summaries
     scan/               Barcode gate, capture, review drafts, confirm
+    training/           Workout session, set entry, exercise sections
     water/              Water logging and goals
     profile/            Profile reads and writes
   lib/                  Dates, units, ids, Result type, logging,
@@ -160,6 +194,7 @@ docs/food-diary.md      The snapshot invariant, diary dates, aggregation
 docs/nutrition-goals.md Calculator formulas, safety floor, goal periods
 docs/water-and-dashboard.md  Water model, dashboard cost, progress summaries
 docs/scanning.md        Barcodes, label reading, food photos, where the key lives
+docs/training.md        Workouts, sets, 1RM, and why there is no calorie burn
 docs/food-data-sources.md  Sources, licensing, import procedure
 docs/database-setup.md  Applying migrations to a Supabase project
 ```

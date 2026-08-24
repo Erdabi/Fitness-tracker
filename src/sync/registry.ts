@@ -2,6 +2,7 @@ import { resyncGoalPeriods } from '@/db/repositories/goals';
 import { resyncWaterGoalPeriods } from '@/db/repositories/water';
 import { describeTable, type TableDescriptor } from './types';
 import type {
+  ExerciseRow,
   FoodLogRow,
   FoodRecentRow,
   NutritionGoalRow,
@@ -10,6 +11,9 @@ import type {
   WaterGoalRow,
   WaterLogRow,
   WeightEntryRow,
+  WorkoutExerciseRow,
+  WorkoutRow,
+  WorkoutSetRow,
 } from '@/db/schema';
 
 /**
@@ -450,6 +454,235 @@ const waterGoals: TableDescriptor = describeTable<WaterGoalRow>({
   }),
 });
 
+
+/* -------------------------------------------------------------- training */
+
+/*
+ * The four training tables, registered in dependency order.
+ *
+ * Order matters twice over, and the two are different mechanisms:
+ *
+ *   • On PULL, the engine walks this array. An exercise must land before the
+ *     workout exercise that references it, and a workout before the exercises
+ *     inside it, or the local foreign keys reject the row.
+ *
+ *   • On PUSH, order comes from the outbox rather than from here — entries
+ *     drain by insertion id, and the repositories create a parent before its
+ *     children, so the server sees them in the order its own foreign keys
+ *     require. Nothing sequences anything by hand and nothing sleeps.
+ *
+ * `trainingSync.node.test.ts` exercises both directions against an in-memory
+ * server, including the case that actually breaks people: a whole session
+ * recorded offline and pushed in one go.
+ */
+
+/**
+ * The exercise catalogue.
+ *
+ * Registered before workouts. Shared rows arrive with `owner_id` null and are
+ * read-only — the pull scopes on `owner_id`, so a first sync brings the user's
+ * own exercises; the shared catalogue is seeded locally by migration v7's
+ * counterpart on the server and arrives the same way for a returning user.
+ *
+ * `secondary_muscles` crosses the boundary as a Postgres `text[]` and is
+ * stored locally as JSON, because SQLite has no array type.
+ */
+const exercises: TableDescriptor = describeTable<ExerciseRow>({
+  table: 'exercises',
+  remoteTable: 'exercises',
+  userColumn: 'owner_id',
+  toRemote: (local) => ({
+    id: local.id,
+    owner_id: local.owner_id,
+    name: local.name,
+    normalized_name: local.normalized_name,
+    description: local.description,
+    instructions: local.instructions,
+    primary_muscle: local.primary_muscle,
+    secondary_muscles: parseStringArray(local.secondary_muscles),
+    equipment: local.equipment,
+    movement_type: local.movement_type,
+    load_type: local.load_type,
+    source: local.source,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    owner_id: asNullableString(remote.owner_id),
+    name: asNullableString(remote.name) ?? 'Exercise',
+    normalized_name: asNullableString(remote.normalized_name) ?? '',
+    description: asNullableString(remote.description),
+    instructions: asNullableString(remote.instructions),
+    primary_muscle: asNullableString(remote.primary_muscle) ?? 'other',
+    secondary_muscles: JSON.stringify(
+      Array.isArray(remote.secondary_muscles)
+        ? remote.secondary_muscles.filter((entry) => typeof entry === 'string')
+        : [],
+    ),
+    equipment: asNullableString(remote.equipment) ?? 'other',
+    movement_type: asNullableString(
+      remote.movement_type,
+    ) as ExerciseRow['movement_type'],
+    load_type: (asNullableString(remote.load_type) ??
+      'weighted') as ExerciseRow['load_type'],
+    source: (asNullableString(remote.source) ?? 'system') as ExerciseRow['source'],
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
+/**
+ * Workouts.
+ *
+ * `local_date` is pushed, not re-derived: it is the user's day, settled at
+ * write time, and a receiving device in another timezone must not recompute it
+ * into its own. The server validates the pair through the same resolver the
+ * diary and water use, so a client that got it wrong is rejected rather than
+ * accepted quietly.
+ *
+ * `started_at` is null while a session is only planned, which is exactly the
+ * case the resolver was generalised for in migration 20260827000001.
+ */
+const workouts: TableDescriptor = describeTable<WorkoutRow>({
+  table: 'workouts',
+  remoteTable: 'workouts',
+  userColumn: 'user_id',
+  toRemote: (local) => ({
+    id: local.id,
+    user_id: local.user_id,
+    name: local.name,
+    local_date: local.local_date,
+    time_zone: local.time_zone,
+    started_at: local.started_at ? new Date(local.started_at).toISOString() : null,
+    completed_at: local.completed_at ? new Date(local.completed_at).toISOString() : null,
+    notes: local.notes,
+    status: local.status,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    user_id: String(remote.user_id),
+    name: asNullableString(remote.name) ?? 'Workout',
+    // Already a calendar day on the server; re-deriving it from the instant
+    // here is exactly the mistake this column exists to prevent.
+    local_date: asNullableString(remote.local_date) ?? '1970-01-01',
+    time_zone: asNullableString(remote.time_zone) ?? 'UTC',
+    started_at: toEpochMs(remote.started_at),
+    completed_at: toEpochMs(remote.completed_at),
+    notes: asNullableString(remote.notes),
+    status: (asNullableString(remote.status) ?? 'completed') as WorkoutRow['status'],
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
+/**
+ * The exercises inside a session.
+ *
+ * `exercise_name` and `load_type` travel as the snapshots they are. Nothing
+ * re-reads the catalogue on either side, which is what makes a session from
+ * March survive the exercise being renamed on another device.
+ */
+const workoutExercises: TableDescriptor = describeTable<WorkoutExerciseRow>({
+  table: 'workout_exercises',
+  remoteTable: 'workout_exercises',
+  userColumn: 'user_id',
+  toRemote: (local) => ({
+    id: local.id,
+    user_id: local.user_id,
+    workout_id: local.workout_id,
+    exercise_id: local.exercise_id,
+    exercise_name: local.exercise_name,
+    load_type: local.load_type,
+    position: local.position,
+    notes: local.notes,
+    target_sets: local.target_sets,
+    target_reps: local.target_reps,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    user_id: String(remote.user_id),
+    workout_id: String(remote.workout_id),
+    exercise_id: asNullableString(remote.exercise_id),
+    exercise_name: asNullableString(remote.exercise_name) ?? 'Exercise',
+    load_type: (asNullableString(remote.load_type) ??
+      'weighted') as WorkoutExerciseRow['load_type'],
+    position: asNullableNumber(remote.position) ?? 0,
+    notes: asNullableString(remote.notes),
+    target_sets: asNullableNumber(remote.target_sets),
+    target_reps: asNullableNumber(remote.target_reps),
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
+/**
+ * Sets.
+ *
+ * Registered last: a set references a workout exercise, which references a
+ * workout. `weight_kg` and `distance_m` are Postgres `numeric`, so they arrive
+ * as strings and go through `asNumeric` — the same coercion the diary uses.
+ *
+ * Zero and null are preserved separately all the way across: zero is "no added
+ * weight" on a pull-up, null is "weight is not how this is measured" on a
+ * plank, and collapsing them would silently rewrite what the user recorded.
+ */
+const workoutSets: TableDescriptor = describeTable<WorkoutSetRow>({
+  table: 'workout_sets',
+  remoteTable: 'workout_sets',
+  userColumn: 'user_id',
+  toRemote: (local) => ({
+    id: local.id,
+    user_id: local.user_id,
+    workout_exercise_id: local.workout_exercise_id,
+    set_number: local.set_number,
+    weight_kg: local.weight_kg,
+    weight_unit: local.weight_unit,
+    reps: local.reps,
+    duration_seconds: local.duration_seconds,
+    distance_m: local.distance_m,
+    // SQLite stores booleans as 0/1; Postgres wants a real boolean.
+    is_completed: local.is_completed === 1,
+    notes: local.notes,
+    deleted_at: local.deleted_at ? new Date(local.deleted_at).toISOString() : null,
+  }),
+  fromRemote: (remote) => ({
+    id: String(remote.id),
+    user_id: String(remote.user_id),
+    workout_exercise_id: String(remote.workout_exercise_id),
+    set_number: asNullableNumber(remote.set_number) ?? 1,
+    weight_kg: asNumeric(remote.weight_kg),
+    weight_unit: (asNullableString(remote.weight_unit) ??
+      'kg') as WorkoutSetRow['weight_unit'],
+    reps: asNullableNumber(remote.reps),
+    duration_seconds: asNullableNumber(remote.duration_seconds),
+    distance_m: asNumeric(remote.distance_m),
+    is_completed: remote.is_completed === true ? 1 : 0,
+    notes: asNullableString(remote.notes),
+    created_at: toEpochMs(remote.created_at) ?? Date.now(),
+    updated_at: toEpochMs(remote.updated_at) ?? Date.now(),
+    server_updated_at: asNullableString(remote.updated_at),
+    deleted_at: toEpochMs(remote.deleted_at),
+  }),
+});
+
+/** A Postgres `text[]` from a locally stored JSON array. Never throws. */
+function parseStringArray(encoded: string): string[] {
+  try {
+    const parsed: unknown = JSON.parse(encoded);
+    return Array.isArray(parsed) ? parsed.filter((e) => typeof e === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
 export const SYNC_REGISTRY = [
   profiles,
   userSettings,
@@ -459,4 +692,8 @@ export const SYNC_REGISTRY = [
   weightEntries,
   waterLogs,
   waterGoals,
+  exercises,
+  workouts,
+  workoutExercises,
+  workoutSets,
 ] as const;

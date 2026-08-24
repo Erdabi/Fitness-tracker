@@ -98,6 +98,27 @@ export default function RootLayout() {
                       name="food/custom"
                       options={{ headerShown: true, title: 'Your own food' }}
                     />
+                    {/*
+                      The active session owns its own header: it shows an
+                      editable name and a running timer, which a navigation
+                      title cannot.
+                    */}
+                    <Stack.Screen
+                      name="workout/[id]"
+                      options={{ headerShown: true, title: 'Workout' }}
+                    />
+                    <Stack.Screen
+                      name="exercises/index"
+                      options={{ headerShown: true, title: 'Exercises' }}
+                    />
+                    <Stack.Screen
+                      name="exercises/new"
+                      options={{ headerShown: true, title: 'Exercise' }}
+                    />
+                    <Stack.Screen
+                      name="exercises/[id]"
+                      options={{ headerShown: true, title: 'Exercise' }}
+                    />
                   </Stack>
                 </AuthProvider>
               </QueryClientProvider>

@@ -15,6 +15,8 @@
  *   • Booleans are 0/1 integers; SQLite has no boolean type.
  */
 
+import { catalogueSeedStatements } from '@/lib/exerciseCatalogue';
+
 export interface Migration {
   readonly version: number;
   readonly name: string;
@@ -478,6 +480,205 @@ export const MIGRATIONS: readonly Migration[] = [
       `CREATE INDEX idx_food_cache_barcode
          ON food_cache(barcode)
          WHERE barcode IS NOT NULL`,
+    ],
+  },
+  {
+    version: 7,
+    name: 'training',
+    statements: [
+      /*
+       * The exercise catalogue.
+       *
+       * Same shape as `foods`: `owner_id NULL` is the shared catalogue that
+       * arrives by sync and nobody may write, `owner_id` set is the user's
+       * own. One table, so browsing, searching and picking are one query
+       * rather than a union of two.
+       *
+       * `load_type` decides how a set is measured, and therefore how the set
+       * editor lays itself out and whether an estimated 1RM means anything.
+       * See src/lib/training.ts.
+       */
+      `CREATE TABLE exercises (
+         id                TEXT    PRIMARY KEY NOT NULL,
+         owner_id          TEXT,
+         name              TEXT    NOT NULL,
+         normalized_name   TEXT    NOT NULL,
+         description       TEXT,
+         instructions      TEXT,
+         primary_muscle    TEXT    NOT NULL,
+         /* JSON array. SQLite has no array type and this is read, never joined. */
+         secondary_muscles TEXT    NOT NULL DEFAULT '[]',
+         equipment         TEXT    NOT NULL,
+         movement_type     TEXT    CHECK (movement_type IS NULL
+                                          OR movement_type IN ('compound', 'isolation')),
+         load_type         TEXT    NOT NULL
+                                   CHECK (load_type IN ('weighted', 'bodyweight',
+                                                        'duration', 'distance')),
+         source            TEXT    NOT NULL CHECK (source IN ('system', 'user')),
+         created_at        INTEGER NOT NULL,
+         updated_at        INTEGER NOT NULL,
+         server_updated_at TEXT,
+         deleted_at        INTEGER,
+         /* Mirrors exercise_source_matches_owner on the server. */
+         CHECK ((owner_id IS NULL) = (source = 'system'))
+       )`,
+
+      `CREATE INDEX idx_exercises_browse
+         ON exercises(primary_muscle, normalized_name)
+         WHERE deleted_at IS NULL`,
+
+      `CREATE INDEX idx_exercises_search
+         ON exercises(normalized_name)
+         WHERE deleted_at IS NULL`,
+
+      /*
+       * Workouts.
+       *
+       * `local_date` is the day this session belongs to, computed at write
+       * time in the user's zone by the same `localDayFor` every other feature
+       * uses. `started_at` is null while the session is only planned; the
+       * server's resolver leaves an authored day alone in exactly that case.
+       */
+      `CREATE TABLE workouts (
+         id                TEXT    PRIMARY KEY NOT NULL,
+         user_id           TEXT    NOT NULL,
+         name              TEXT    NOT NULL,
+         local_date        TEXT    NOT NULL
+                                   CHECK (local_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+         time_zone         TEXT    NOT NULL,
+         started_at        INTEGER,
+         completed_at      INTEGER,
+         notes             TEXT,
+         status            TEXT    NOT NULL DEFAULT 'in_progress'
+                                   CHECK (status IN ('planned', 'in_progress',
+                                                     'completed', 'abandoned')),
+         created_at        INTEGER NOT NULL,
+         updated_at        INTEGER NOT NULL,
+         server_updated_at TEXT,
+         deleted_at        INTEGER,
+         /* Mirrors workout_status_matches_timestamps on the server. */
+         CHECK (
+           (status = 'planned'     AND started_at IS NULL AND completed_at IS NULL) OR
+           (status = 'in_progress' AND started_at IS NOT NULL AND completed_at IS NULL) OR
+           (status = 'completed'   AND started_at IS NOT NULL AND completed_at IS NOT NULL) OR
+           (status = 'abandoned'   AND started_at IS NOT NULL)
+         ),
+         CHECK (completed_at IS NULL OR completed_at >= started_at)
+       )`,
+
+      `CREATE INDEX idx_workouts_history
+         ON workouts(user_id, local_date DESC, started_at DESC)
+         WHERE deleted_at IS NULL`,
+
+      // "Do I have a session open?" — asked on every visit to the Train tab.
+      `CREATE INDEX idx_workouts_active
+         ON workouts(user_id, status)
+         WHERE deleted_at IS NULL AND status = 'in_progress'`,
+
+      /*
+       * An exercise as it appeared in one session.
+       *
+       * `exercise_name` and `load_type` are snapshots, taken when the exercise
+       * was added. History renders from them, never from the catalogue — the
+       * same invariant `food_logs` has, and for the same reason: renaming an
+       * exercise must not rewrite what a session in March says was performed.
+       *
+       * `user_id` is denormalised from the workout so a sync pull can scope on
+       * it without a join, exactly as the server does.
+       */
+      `CREATE TABLE workout_exercises (
+         id                TEXT    PRIMARY KEY NOT NULL,
+         user_id           TEXT    NOT NULL,
+         workout_id        TEXT    NOT NULL,
+         exercise_id       TEXT,
+         exercise_name     TEXT    NOT NULL,
+         load_type         TEXT    NOT NULL
+                                   CHECK (load_type IN ('weighted', 'bodyweight',
+                                                        'duration', 'distance')),
+         position          INTEGER NOT NULL CHECK (position >= 0 AND position < 1000),
+         notes             TEXT,
+         target_sets       INTEGER CHECK (target_sets IS NULL
+                                          OR (target_sets BETWEEN 1 AND 50)),
+         target_reps       INTEGER CHECK (target_reps IS NULL
+                                          OR (target_reps BETWEEN 1 AND 1000)),
+         created_at        INTEGER NOT NULL,
+         updated_at        INTEGER NOT NULL,
+         server_updated_at TEXT,
+         deleted_at        INTEGER,
+         FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
+       )`,
+
+      `CREATE INDEX idx_workout_exercises_workout
+         ON workout_exercises(workout_id, position)
+         WHERE deleted_at IS NULL`,
+
+      // Previous performance: the last session containing this exercise.
+      `CREATE INDEX idx_workout_exercises_history
+         ON workout_exercises(user_id, exercise_id)
+         WHERE deleted_at IS NULL AND exercise_id IS NOT NULL`,
+
+      /*
+       * One set.
+       *
+       * `weight_kg` is canonical and always kilograms; `weight_unit` records
+       * what the user was typing in so the number reads back as they entered
+       * it. Zero and NULL are different facts: zero is "no added weight" on a
+       * set of pull-ups, NULL is "weight is not how this is measured" on a
+       * plank.
+       *
+       * No UNIQUE on (workout_exercise_id, set_number). The server has one and
+       * it is deferrable; SQLite cannot defer a unique constraint, so a
+       * mid-renumber collision during a reorder would abort a legitimate
+       * write. The invariant is enforced by the server and by
+       * `renumberSets`, which writes a contiguous sequence in one transaction.
+       */
+      `CREATE TABLE workout_sets (
+         id                  TEXT    PRIMARY KEY NOT NULL,
+         user_id             TEXT    NOT NULL,
+         workout_exercise_id TEXT    NOT NULL,
+         set_number          INTEGER NOT NULL
+                                     CHECK (set_number BETWEEN 1 AND 100),
+         weight_kg           REAL    CHECK (weight_kg IS NULL
+                                            OR (weight_kg >= 0 AND weight_kg <= 1000)),
+         weight_unit         TEXT    NOT NULL DEFAULT 'kg'
+                                     CHECK (weight_unit IN ('kg', 'lb')),
+         reps                INTEGER CHECK (reps IS NULL OR (reps >= 0 AND reps <= 1000)),
+         duration_seconds    INTEGER CHECK (duration_seconds IS NULL
+                                            OR (duration_seconds > 0
+                                                AND duration_seconds <= 86400)),
+         distance_m          REAL    CHECK (distance_m IS NULL
+                                            OR (distance_m > 0 AND distance_m <= 1000000)),
+         is_completed        INTEGER NOT NULL DEFAULT 0
+                                     CHECK (is_completed IN (0, 1)),
+         notes               TEXT,
+         created_at          INTEGER NOT NULL,
+         updated_at          INTEGER NOT NULL,
+         server_updated_at   TEXT,
+         deleted_at          INTEGER,
+         /* Mirrors set_measures_something on the server. */
+         CHECK (reps IS NOT NULL OR duration_seconds IS NOT NULL
+                OR distance_m IS NOT NULL),
+         FOREIGN KEY (workout_exercise_id)
+           REFERENCES workout_exercises(id) ON DELETE CASCADE
+       )`,
+
+      `CREATE INDEX idx_workout_sets_exercise
+         ON workout_sets(workout_exercise_id, set_number)
+         WHERE deleted_at IS NULL`,
+
+      /*
+       * The starter catalogue, seeded rather than downloaded.
+       *
+       * Browsing exercises has to work on a first run with no network, so the
+       * shared rows are written at migration time with the SAME fixed ids the
+       * server migration uses. Identical ids are what let a session recorded
+       * on a fresh device reference a catalogue exercise the server also has —
+       * without them the push would be rejected by the foreign key.
+       *
+       * Generated from `src/lib/exerciseCatalogue.ts` so the list exists once;
+       * a drift test compares it against the server's copy.
+       */
+      ...catalogueSeedStatements(),
     ],
   },
 ];

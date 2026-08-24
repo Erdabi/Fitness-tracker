@@ -280,6 +280,99 @@ export interface FoodCacheServingRow {
  * Column manifest, used by the migration test to verify that the shipped SQL
  * actually produces the shape the code expects.
  */
+/* --------------------------------------------------------------- training */
+
+/** How a set is measured. Mirrors `public.exercise_load_type`. */
+export type LoadTypeValue = 'weighted' | 'bodyweight' | 'duration' | 'distance';
+
+export type WorkoutStatus = 'planned' | 'in_progress' | 'completed' | 'abandoned';
+
+export const WORKOUT_STATUSES: readonly WorkoutStatus[] = [
+  'planned',
+  'in_progress',
+  'completed',
+  'abandoned',
+];
+
+/**
+ * The exercise catalogue.
+ *
+ * One table for two kinds of row, exactly as `foods` works: `owner_id` null is
+ * the shared catalogue, `owner_id` set is the user's own. Browsing and search
+ * are therefore one query rather than a union.
+ */
+export interface ExerciseRow extends SyncColumns {
+  id: string;
+  /** Null = shared catalogue. Set = this user's own exercise. */
+  owner_id: string | null;
+  name: string;
+  normalized_name: string;
+  description: string | null;
+  instructions: string | null;
+  primary_muscle: string;
+  /** JSON-encoded array of muscle names. SQLite has no array type. */
+  secondary_muscles: string;
+  equipment: string;
+  movement_type: 'compound' | 'isolation' | null;
+  load_type: LoadTypeValue;
+  source: 'system' | 'user';
+  created_at: number;
+}
+
+export interface WorkoutRow extends SyncColumns {
+  id: string;
+  user_id: string;
+  name: string;
+  /** `YYYY-MM-DD` in `time_zone`. Never a UTC truncation. */
+  local_date: string;
+  time_zone: string;
+  /** Epoch ms. Null while the session is only planned. */
+  started_at: number | null;
+  completed_at: number | null;
+  notes: string | null;
+  status: WorkoutStatus;
+  created_at: number;
+}
+
+/**
+ * An exercise as it appeared in one session.
+ *
+ * `exercise_name` and `load_type` are frozen snapshots taken when it was
+ * added. Nothing downstream reads the catalogue again, which is what makes a
+ * historical session immune to the exercise being renamed, retyped or removed.
+ */
+export interface WorkoutExerciseRow extends SyncColumns {
+  id: string;
+  user_id: string;
+  workout_id: string;
+  /** Provenance only, and null once the catalogue row is gone. */
+  exercise_id: string | null;
+  exercise_name: string;
+  load_type: LoadTypeValue;
+  position: number;
+  notes: string | null;
+  target_sets: number | null;
+  target_reps: number | null;
+  created_at: number;
+}
+
+export interface WorkoutSetRow extends SyncColumns {
+  id: string;
+  user_id: string;
+  workout_exercise_id: string;
+  set_number: number;
+  /** Canonical kilograms. 0 = no added weight; null = not measured by weight. */
+  weight_kg: number | null;
+  /** What the user typed in. A display preference, never the value. */
+  weight_unit: 'kg' | 'lb';
+  reps: number | null;
+  duration_seconds: number | null;
+  distance_m: number | null;
+  is_completed: number;
+  notes: string | null;
+  created_at: number;
+}
+
 export const TABLE_COLUMNS = {
   profiles: [
     'id',
@@ -463,6 +556,72 @@ export const TABLE_COLUMNS = {
     'calculated_ml',
     'basis_weight_kg',
     'note',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  exercises: [
+    'id',
+    'owner_id',
+    'name',
+    'normalized_name',
+    'description',
+    'instructions',
+    'primary_muscle',
+    'secondary_muscles',
+    'equipment',
+    'movement_type',
+    'load_type',
+    'source',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  workouts: [
+    'id',
+    'user_id',
+    'name',
+    'local_date',
+    'time_zone',
+    'started_at',
+    'completed_at',
+    'notes',
+    'status',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  workout_exercises: [
+    'id',
+    'user_id',
+    'workout_id',
+    'exercise_id',
+    'exercise_name',
+    'load_type',
+    'position',
+    'notes',
+    'target_sets',
+    'target_reps',
+    'created_at',
+    'updated_at',
+    'server_updated_at',
+    'deleted_at',
+  ],
+  workout_sets: [
+    'id',
+    'user_id',
+    'workout_exercise_id',
+    'set_number',
+    'weight_kg',
+    'weight_unit',
+    'reps',
+    'duration_seconds',
+    'distance_m',
+    'is_completed',
+    'notes',
     'created_at',
     'updated_at',
     'server_updated_at',

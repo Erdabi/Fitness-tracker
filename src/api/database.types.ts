@@ -642,6 +642,210 @@ export interface Database {
           },
         ];
       };
+      exercises: {
+        Row: {
+          id: string;
+          /** Null = shared catalogue. Set = that user's own exercise. */
+          owner_id: string | null;
+          name: string;
+          normalized_name: string;
+          description: string | null;
+          instructions: string | null;
+          primary_muscle: string;
+          secondary_muscles: string[];
+          equipment: string;
+          movement_type: 'compound' | 'isolation' | null;
+          load_type: 'weighted' | 'bodyweight' | 'duration' | 'distance';
+          source: 'system' | 'user';
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          owner_id: string;
+          name: string;
+          normalized_name: string;
+          description?: string | null;
+          instructions?: string | null;
+          primary_muscle: string;
+          secondary_muscles?: string[];
+          equipment: string;
+          movement_type?: 'compound' | 'isolation' | null;
+          load_type: 'weighted' | 'bodyweight' | 'duration' | 'distance';
+          source: 'user';
+          deleted_at?: string | null;
+        };
+        Update: {
+          name?: string;
+          normalized_name?: string;
+          description?: string | null;
+          instructions?: string | null;
+          primary_muscle?: string;
+          secondary_muscles?: string[];
+          equipment?: string;
+          movement_type?: 'compound' | 'isolation' | null;
+          load_type?: 'weighted' | 'bodyweight' | 'duration' | 'distance';
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'exercises_owner_id_fkey';
+            columns: ['owner_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      workouts: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          /** `YYYY-MM-DD` in `time_zone`. Never a UTC truncation. */
+          local_date: string;
+          time_zone: string;
+          started_at: string | null;
+          completed_at: string | null;
+          notes: string | null;
+          status: 'planned' | 'in_progress' | 'completed' | 'abandoned';
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          /** Optional: derived from `started_at` in `time_zone` when omitted. */
+          local_date?: string | null;
+          time_zone: string;
+          started_at?: string | null;
+          completed_at?: string | null;
+          notes?: string | null;
+          status?: 'planned' | 'in_progress' | 'completed' | 'abandoned';
+          deleted_at?: string | null;
+        };
+        Update: {
+          name?: string;
+          local_date?: string | null;
+          time_zone?: string;
+          started_at?: string | null;
+          completed_at?: string | null;
+          notes?: string | null;
+          status?: 'planned' | 'in_progress' | 'completed' | 'abandoned';
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'workouts_user_id_fkey';
+            columns: ['user_id'];
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+      workout_exercises: {
+        Row: {
+          id: string;
+          user_id: string;
+          workout_id: string;
+          exercise_id: string | null;
+          /** Snapshot. History renders from this, never from the catalogue. */
+          exercise_name: string;
+          load_type: 'weighted' | 'bodyweight' | 'duration' | 'distance';
+          position: number;
+          notes: string | null;
+          target_sets: number | null;
+          target_reps: number | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          workout_id: string;
+          exercise_id?: string | null;
+          exercise_name: string;
+          load_type: 'weighted' | 'bodyweight' | 'duration' | 'distance';
+          position: number;
+          notes?: string | null;
+          target_sets?: number | null;
+          target_reps?: number | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          exercise_id?: string | null;
+          exercise_name?: string;
+          load_type?: 'weighted' | 'bodyweight' | 'duration' | 'distance';
+          position?: number;
+          notes?: string | null;
+          target_sets?: number | null;
+          target_reps?: number | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'workout_exercises_belong_to_own_workout';
+            columns: ['workout_id', 'user_id'];
+            referencedRelation: 'workouts';
+            referencedColumns: ['id', 'user_id'];
+          },
+        ];
+      };
+      workout_sets: {
+        Row: {
+          id: string;
+          user_id: string;
+          workout_exercise_id: string;
+          set_number: number;
+          /** Canonical kilograms. PostgREST sends `numeric` as a string. */
+          weight_kg: number | string | null;
+          weight_unit: 'kg' | 'lb';
+          reps: number | null;
+          duration_seconds: number | null;
+          distance_m: number | string | null;
+          is_completed: boolean;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          workout_exercise_id: string;
+          set_number: number;
+          weight_kg?: number | null;
+          weight_unit?: 'kg' | 'lb';
+          reps?: number | null;
+          duration_seconds?: number | null;
+          distance_m?: number | null;
+          is_completed?: boolean;
+          notes?: string | null;
+          deleted_at?: string | null;
+        };
+        Update: {
+          set_number?: number;
+          weight_kg?: number | null;
+          weight_unit?: 'kg' | 'lb';
+          reps?: number | null;
+          duration_seconds?: number | null;
+          distance_m?: number | null;
+          is_completed?: boolean;
+          notes?: string | null;
+          deleted_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: 'workout_sets_belong_to_own_exercise';
+            columns: ['workout_exercise_id', 'user_id'];
+            referencedRelation: 'workout_exercises';
+            referencedColumns: ['id', 'user_id'];
+          },
+        ];
+      };
     };
     Views: Record<never, never>;
     Functions: {
@@ -668,6 +872,23 @@ export interface Database {
         Args: { p_limit?: number; p_order?: string };
         Returns: FoodSearchResultRow[];
       };
+      /*
+       * Previous performance for one exercise. Mirrored by the client's local
+       * query — the app answers it from SQLite so set entry never waits for
+       * the network. This exists for a fresh install and for other clients.
+       */
+      previous_exercise_performance: {
+        Args: { p_user: string; p_exercise: string; p_before?: string | null };
+        Returns: {
+          workout_exercise_id: string;
+          local_date: string;
+          set_number: number;
+          weight_kg: number | string | null;
+          reps: number | null;
+          duration_seconds: number | null;
+          distance_m: number | string | null;
+        }[];
+      };
     };
     Enums: {
       sex: 'male' | 'female' | 'other';
@@ -678,6 +899,9 @@ export interface Database {
       goal_direction: 'lose' | 'maintain' | 'gain';
       goal_source: 'calculated' | 'manual' | 'calculated_then_modified';
       water_goal_source: 'calculated' | 'manual';
+      exercise_load_type: 'weighted' | 'bodyweight' | 'duration' | 'distance';
+      exercise_movement: 'compound' | 'isolation';
+      workout_status: 'planned' | 'in_progress' | 'completed' | 'abandoned';
     };
     CompositeTypes: Record<never, never>;
   };

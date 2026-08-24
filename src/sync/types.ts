@@ -11,7 +11,11 @@ export type SyncableTable =
   | 'nutrition_goals'
   | 'weight_entries'
   | 'water_logs'
-  | 'water_goals';
+  | 'water_goals'
+  | 'exercises'
+  | 'workouts'
+  | 'workout_exercises'
+  | 'workout_sets';
 
 /** Postgres tables the engine may address, taken from the generated types. */
 export type RemoteTable = keyof Database['public']['Tables'];
@@ -50,8 +54,16 @@ export interface TableDescriptor {
   readonly table: SyncableTable;
   /** Remote table name, when it differs from the local one. */
   readonly remoteTable: RemoteTable;
-  /** Column holding the owning user's id. Used to scope pulls. */
-  readonly userColumn: 'id' | 'user_id';
+  /**
+   * Column holding the owning user's id. Used to scope pulls.
+   *
+   * `owner_id` exists for the exercise catalogue, which holds two kinds of row
+   * in one table: shared rows with a null owner, and the user's own. Scoping
+   * the pull on `owner_id` carries only what the user made — the shared
+   * catalogue is seeded by migration rather than downloaded, so browsing works
+   * on a first run with no network. See `src/lib/exerciseCatalogue.ts`.
+   */
+  readonly userColumn: 'id' | 'user_id' | 'owner_id';
   /** Maps a local row to the shape the server expects. */
   readonly toRemote: (local: AnyRow) => AnyRow;
   /** Maps a server row to the local shape. */
@@ -81,7 +93,7 @@ export interface TableDescriptor {
 export function describeTable<TLocal extends object>(descriptor: {
   table: SyncableTable;
   remoteTable: RemoteTable;
-  userColumn: 'id' | 'user_id';
+  userColumn: 'id' | 'user_id' | 'owner_id';
   toRemote: (local: TLocal) => AnyRow;
   fromRemote: (remote: AnyRow) => TLocal;
   afterPull?: (db: SqlDatabase, userId: string) => void;
