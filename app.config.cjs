@@ -62,6 +62,18 @@ module.exports = ({ config }) => ({
   name: 'Fitness Tracker',
   slug: 'fitness-tracker',
   /*
+   * The expo.dev account that owns this project (@erdoganabi/fitness-tracker).
+   * Unlike EAS_PROJECT_ID below, this is genuinely static — it identifies who
+   * owns the slug, not which machine or environment is building, so an env
+   * var would add indirection with no benefit. It's also not a secret: it's
+   * already public in the project's dashboard URL and every build manifest.
+   * `eas init` itself asks for exactly this value once the project id is
+   * resolved (via ensureOwnerSlugConsistencyAsync) and, being unable to write
+   * it into a dynamic config either, would otherwise fail the same way the
+   * project id lookup did before EAS_PROJECT_ID was added.
+   */
+  owner: 'erdoganabi',
+  /*
    * Defaults to the last hand-set release version for local dev, `expo
    * start`, and tests. The Android release workflow overrides it with the
    * pushed git tag (see .github/workflows/release-android.yml), so the app's

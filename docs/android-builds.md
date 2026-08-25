@@ -167,6 +167,13 @@ This id isn't a secret — it's a public identifier embedded in every build's
 manifest regardless of who set it (see the comment in `app.config.cjs`). It's
 kept out of the repo only so a fork doesn't inherit your project by accident.
 
+Once the id resolves, `init` also checks that the config's `owner` field
+matches the account that actually owns the project (`ensureOwnerSlugConsistencyAsync`)
+— and, being a dynamic config, can't write that either if it's missing. Unlike
+the project id, `owner` doesn't vary per machine or environment, so
+`app.config.cjs` sets it as a plain static field (`owner: 'erdoganabi'`)
+rather than reading it from an env var — nothing further to configure for it.
+
 ### 3.2 Create a CI access token
 
 **expo.dev → Account settings → Access Tokens → Create.** Copy the value —
@@ -355,6 +362,18 @@ to Expo's build servers (neither is available here):
   resolution ignores dotenv files (`eas-cli` passes `EXPO_NO_DOTENV=1` when
   it shells out to `expo config` internally) — read directly out of
   `eas-cli`'s own source, not inferred from behavior.
+- The follow-up `owner` write failure — same reproduction method, one level
+  deeper. `eas-cli@22.4.0`'s real, unmodified `ensureOwnerSlugConsistencyAsync`
+  (the exact function `eas init` calls right after the project id resolves)
+  was run against this project with only its one network call stubbed to
+  return the real account (`erdoganabi`) and slug: against the prior
+  `app.config.cjs` (no `owner` field) it failed with the identical message
+  the report showed, `{"owner":"erdoganabi"}` included verbatim; against the
+  fixed file it returned cleanly with no config-write attempted. Separately,
+  the actual `npx eas-cli@latest init --non-interactive` command was run
+  (with `EAS_PROJECT_ID` exported) end to end: it fails only for lack of an
+  `EXPO_TOKEN`/login, which this environment cannot provide, confirming the
+  dynamic-config write is not what stops it anymore.
 - `eas.json`'s `preview` profile resolves to exactly `distribution: internal`,
   `buildType: apk` — checked by loading the real `@expo/eas-json@22.0.0`
   package (matching the pinned CLI) and calling its own `resolveBuildProfile`
