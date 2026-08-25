@@ -1,0 +1,179 @@
+name: Release Android APK
+
+# Triggered by a version tag ONLY — never by an ordinary commit or PR. That is
+# the whole point of a tag: it is the one signal that means "this is a release
+# a person should be able to install," as opposed to every other push, which
+# ci.yml already covers. Pushing v1.2.3 is what starts this; nothing else does.
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+# A release build must run to completion once started — cancelling it midway
+# through an EAS build would waste the build minutes and still leave nothing
+# to download, so unlike ci.yml this does not cancel an in-progress run.
+concurrency:
+  group: release-android-${{ github.ref }}
+  cancel-in-progress: false
+
+# Only the job that creates the GitHub Release needs write access; the
+# default token would otherwise be read-only.
+permissions:
+  contents: write
+
+jobs:
+  # Identical in shape to ci.yml's `verify` job — kept as its own job here
+  # (rather than assumed from ci.yml's run on the commit the tag points at)
+  # because a tag is not required to point at a commit ci.yml has already
+  # checked, and an EAS build is expensive enough that it must never run
+  # against unverified code.
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test -- --ci
+        env:
+          # The app validates configuration at module load, so the test run
+          # needs plausible values. These are placeholders, not credentials —
+          # no test reaches the network.
+          EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key-long-enough
+          EXPO_PUBLIC_APP_ENV: test
+
+  # Identical to ci.yml's `database` job — applies every migration to a
+  # throwaway Postgres and runs the RLS suite. A release can carry schema
+  # changes, so this runs for the same reason `verify` does: an EAS build
+  # must never start from unverified code.
+  database:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify migrations and RLS
+        run: scripts/verify-db.sh
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: postgres
+
+  # Exports a real Metro bundle and greps it for leaked secrets — the same
+  # gate documented in docs/scanning.md §2, run here for the same reason as
+  # `verify` and `database`: nothing this pipeline produces should be
+  # downloadable before this has passed.
+  bundle-security:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check the exported bundle for leaked secrets
+        run: npm run check:bundle
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: https://ci-placeholder.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key-long-enough
+          EXPO_PUBLIC_APP_ENV: preview
+
+  build-android:
+    needs: [verify, database, bundle-security]
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The tag IS the version: v1.2.3 becomes app version 1.2.3. Nothing
+      # here increments anything — it only reads what the person who pushed
+      # the tag already decided. See the version comment in app.config.ts.
+      - name: Derive the app version from the tag
+        id: version
+        run: echo "value=${GITHUB_REF_NAME#v}" >>"$GITHUB_OUTPUT"
+
+      - name: Build the Android APK via EAS
+        run: >-
+          scripts/build-android-apk.sh
+          "fitness-tracker-${{ steps.version.outputs.value }}.apk"
+        env:
+          # An EAS access token (expo.dev → Account settings → Access
+          # Tokens) — authenticates this workflow to EAS Build. Not a
+          # Supabase or Anthropic secret, and not something that reaches the
+          # APK: it authorises the *build request*, and is never read by the
+          # app itself.
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          # This project's EAS project id (from `eas init`, see
+          # docs/android-builds.md). Not sensitive — see app.config.ts — but
+          # kept out of the repo so it stays a per-fork/per-account setting
+          # rather than a value baked into shared history.
+          EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}
+          APP_VERSION: ${{ steps.version.outputs.value }}
+
+      # Downloadable straight from the workflow run's summary page — the
+      # requirement this satisfies even if the release step below fails for
+      # any reason (network hiccup creating the Release, permissions, etc).
+      - name: Upload the APK to this workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: fitness-tracker-${{ steps.version.outputs.value }}-android
+          path: fitness-tracker-${{ steps.version.outputs.value }}.apk
+          if-no-files-found: error
+
+      # Creates the GitHub Release for this tag (pushing a tag alone does not
+      # create one) and attaches the APK to it. Uses the `gh` CLI that ships
+      # on every GitHub-hosted runner rather than a third-party action, so
+      # this step has no dependency beyond GitHub's own tooling.
+      - name: Attach the APK to the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          APK: fitness-tracker-${{ steps.version.outputs.value }}.apk
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" --title "$TAG" --generate-notes
+          fi

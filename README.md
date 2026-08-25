@@ -44,6 +44,16 @@ npx expo run:ios      # or: npx expo run:android
 
 After that, `npm start` connects to the development build as usual.
 
+### Just want to try a release in LDPlayer? Skip the SDK entirely
+
+The section below (`npx expo run:android`) is for *developing* the app — live
+reload, breakpoints, editing code. If you only want to **install and use** a
+released version, you don't need the Android SDK, `adb`, or any of it: every
+tagged release builds an APK automatically and it downloads like any other
+file. See [`docs/android-builds.md`](docs/android-builds.md) — the short
+version is `git tag v1.0.0 && git push origin v1.0.0`, wait for the Actions
+run to finish, download the APK, drag it into LDPlayer.
+
 ### Running on an Android emulator (LDPlayer, BlueStacks, Android Studio)
 
 The app uses native modules — SQLite, SecureStore, Camera — so it needs a
@@ -91,6 +101,7 @@ Delete it and re-run if a native dependency changes.
 | `npm run format` | Prettier |
 | `npm run check:bundle` | Export a real bundle and grep it for leaked secrets |
 | `./scripts/verify-db.sh` | Apply every migration to a throwaway Postgres and run the SQL suites |
+| `./scripts/build-android-apk.sh` | Build a preview Android APK via EAS and download it — see [`docs/android-builds.md`](docs/android-builds.md) |
 
 ---
 
@@ -195,6 +206,7 @@ docs/nutrition-goals.md Calculator formulas, safety floor, goal periods
 docs/water-and-dashboard.md  Water model, dashboard cost, progress summaries
 docs/scanning.md        Barcodes, label reading, food photos, where the key lives
 docs/training.md        Workouts, sets, 1RM, and why there is no calorie burn
+docs/android-builds.md  Tagging a release, getting an installable APK, EAS setup
 docs/food-data-sources.md  Sources, licensing, import procedure
 docs/database-setup.md  Applying migrations to a Supabase project
 ```
