@@ -129,7 +129,7 @@ jobs:
 
       # The tag IS the version: v1.2.3 becomes app version 1.2.3. Nothing
       # here increments anything — it only reads what the person who pushed
-      # the tag already decided. See the version comment in app.config.ts.
+      # the tag already decided. See the version comment in app.config.cjs.
       - name: Derive the app version from the tag
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >>"$GITHUB_OUTPUT"
@@ -146,7 +146,7 @@ jobs:
           # app itself.
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           # This project's EAS project id (from `eas init`, see
-          # docs/android-builds.md). Not sensitive — see app.config.ts — but
+          # docs/android-builds.md). Not sensitive — see app.config.cjs — but
           # kept out of the repo so it stays a per-fork/per-account setting
           # rather than a value baked into shared history.
           EAS_PROJECT_ID: ${{ vars.EAS_PROJECT_ID }}

@@ -19,6 +19,12 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    // app.config.cjs is plain JavaScript with `@ts-check` + JSDoc types (see
+    // that file for why) rather than `.ts` — "**/*.ts" doesn't match a ".cjs"
+    // file, and `expo/tsconfig.base`'s `allowJs` alone doesn't add it to the
+    // project; it needs an explicit entry or it silently drops out of
+    // typecheck coverage.
+    "app.config.cjs",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
   ],

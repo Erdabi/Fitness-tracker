@@ -17,7 +17,7 @@
 #
 # Optional:
 #   APP_VERSION     Overrides the app version baked into this build (see
-#                    app.config.ts). Defaults to app.config.ts's own default
+#                    app.config.cjs). Defaults to app.config.cjs's own default
 #                    when unset — this script never invents a version.
 #
 # Usage:
@@ -37,7 +37,7 @@ OUTPUT="${1:-fitness-tracker-preview.apk}"
 : "${EXPO_TOKEN:?EXPO_TOKEN is not set — see docs/android-builds.md}"
 : "${EAS_PROJECT_ID:?EAS_PROJECT_ID is not set — run 'eas init' once, see docs/android-builds.md}"
 
-echo "▸ Building Android APK (profile: preview, version: ${APP_VERSION:-<app.config.ts default>})"
+echo "▸ Building Android APK (profile: preview, version: ${APP_VERSION:-<app.config.cjs default>})"
 
 RESULT_JSON="$(mktemp)"
 trap 'rm -f "$RESULT_JSON"' EXIT

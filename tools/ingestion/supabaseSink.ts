@@ -12,7 +12,7 @@ import type { CanonicalFood, SourceId } from './types';
  * there is no path from the mobile client to these rows at all.
  *
  * The key is read from the environment and must never be committed, put in
- * `app.config.ts`, or given an `EXPO_PUBLIC_` prefix.
+ * `app.config.cjs`, or given an `EXPO_PUBLIC_` prefix.
  */
 export function createSupabaseSink(): CatalogSink {
   const url = process.env.SUPABASE_URL;

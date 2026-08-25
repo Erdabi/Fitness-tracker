@@ -159,7 +159,7 @@ npx tsx scripts/import-foods.ts \
 > **The service role key bypasses Row Level Security.** It exists only so the
 > importer can write the shared catalogue, which has no write policy for
 > ordinary users. Keep it in your shell or a secret manager — never in the
-> repository, never in `app.config.ts`, and never behind an `EXPO_PUBLIC_`
+> repository, never in `app.config.cjs`, and never behind an `EXPO_PUBLIC_`
 > prefix.
 
 ### Re-running is safe

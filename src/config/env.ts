@@ -4,7 +4,7 @@ import { z } from 'zod';
 /**
  * Validated public configuration.
  *
- * Reads from `app.config.ts` -> `extra`, which is populated from EXPO_PUBLIC_*
+ * Reads from `app.config.cjs` -> `extra`, which is populated from EXPO_PUBLIC_*
  * variables at build time. Validation happens once at module load so a missing
  * or malformed value fails immediately with an actionable message, rather than
  * surfacing later as an opaque network error against `undefined/auth/v1/token`.

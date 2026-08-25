@@ -30,22 +30,92 @@ database; no build, no APK). Only `git push origin vX.Y.Z` starts a build.
 
 ---
 
-## 2. One-time setup (do this once, before the first tag)
+## 2. Why the config is `app.config.cjs`, not `app.config.ts`
+
+`eas init`, `eas build:configure`, and `eas build` all need to read the
+project's config before doing anything else — and, unlike `expo start`/`npx
+expo config`, they don't use this project's own installed `typescript`
+(`~6.0.3`) to do it. Each `npx eas-cli@…` invocation resolves its **own**,
+separate `typescript` dependency, independent of this repo's
+`devDependencies` — and at the time this was fixed, that resolved to
+**TypeScript 7**, a release that dropped the `ts.transpileModule` API
+`eas-cli`'s config loader (`@expo/require-utils`) depends on to transpile a
+`.ts` file. This is a confirmed, then-open upstream bug — [expo/expo#47627,
+"expo doesn't compile `app.config.ts` when using typescript 7"][47627], with
+a fix already in flight there (expo/expo#47759) but not yet released in the
+`eas-cli` versions available when this repo hit it.
+
+With that transpiler unavailable, `@expo/require-utils` falls back to Node's
+own native TypeScript-stripping (`node:module`'s `stripTypeScriptTypes`) —
+but that API doesn't exist on Node versions before roughly 22.6, and even
+where it does, it wasn't enough on its own (see the failure-mode note below).
+With **both** unavailable, the loader evaluates `app.config.ts`'s raw,
+untranspiled source as plain CommonJS. The first line was
+`import type { ConfigContext, ExpoConfig } from 'expo/config';` — plain
+CommonJS has no idea what `import` is — and Node's error for exactly that
+shape is: **`Cannot use import statement outside a module`**.
+
+Nothing about this was specific to how this file was written; any dynamic
+`app.config.ts` hits the identical failure under the same
+Node-version/`eas-cli`-resolved-`typescript` combination, since writing one
+at all requires `import`/`export` syntax.
+
+**The fix — `app.config.cjs` — was chosen and verified like this:**
+
+- Expo's own docs already name this failure category and its remedy: *"the
+  config is transpiled to CommonJS and both .js and .ts files can mix ESM and
+  CommonJS syntax. When that mix causes import or require issues, use one of
+  the explicit extensions [`.mts`, `.cts`, `.mjs`, `.cjs`] to lock the config
+  to a single module format."* (Configure with app config,
+  docs.expo.dev/workflow/configuration).
+- `.cts` (TypeScript, forced to CommonJS output) was tried first, as the
+  option closest to the original file. It was **confirmed insufficient**: it
+  still needs a working TypeScript transpiler for its type annotations, and
+  under the exact failing combination (a real Node 20.18.1, a real
+  `eas-cli@22.4.0`, a real resolved `typescript@7.0.2`, driving `eas-cli`'s
+  own unmodified loader directly) it failed with the identical error class as
+  `.ts` did. This was tested, not assumed.
+- `.cjs` — plain CommonJS, no TypeScript syntax to strip at all — takes the
+  same code path plain `.js` always has: Node's native `require()`, no
+  transpiler involved, nothing that can be missing. Verified the same way:
+  under the identical real Node 20.18.1 + real `eas-cli@22.4.0` + real
+  `typescript@7.0.2` combination, `@expo/require-utils`'s own loader — and,
+  one layer up, `@expo/config`'s own `getConfig()`, the function `eas-cli`
+  actually calls — both load `app.config.cjs` and return the correct config,
+  including a working `APP_VERSION`/`EAS_PROJECT_ID` override.
+
+Type safety is not given up: `app.config.cjs` starts with `// @ts-check` and
+JSDoc `@param`/`@returns` annotations naming `ConfigContext`/`ExpoConfig`
+(from `expo/config`), and is explicitly listed in `tsconfig.json`'s
+`include`. `npm run typecheck` catches a wrong or misspelled field in it
+exactly as it would in a `.ts` file — confirmed by deliberately introducing
+one and watching `tsc` report it, then removing it again.
+
+No application code changed. This is one non-application, never-bundled,
+tooling-only file that `expo`/`eas-cli` read as a build input — never
+something Metro ships to a device — so this is not a project-wide CommonJS
+conversion; every other `.ts`/`.tsx` file is untouched.
+
+[47627]: https://github.com/expo/expo/issues/47627
+
+---
+
+## 3. One-time setup (do this once, before the first tag)
 
 Nothing below touches your PC's Android SDK, `adb`, or emulator setup — it's
 entirely about registering this project with EAS and telling GitHub how to
 reach it.
 
-### 2.1 Create the EAS project
+### 3.1 Create the EAS project
 
 ```bash
 npx eas-cli@22.4.0 login       # opens a browser once; creates an Expo account if needed
 npx eas-cli@22.4.0 init        # registers this project on expo.dev
 ```
 
-`init` prints a project id (a UUID). Because `app.config.ts` is a `.ts` file
-rather than `app.json`, the CLI can't write the id back into it automatically
-— it will tell you to add it yourself. Put it in `.env.local`:
+`init` prints a project id (a UUID). Because `app.config.cjs` is a dynamic
+config rather than `app.json`, the CLI can't write the id back into it
+automatically — it will tell you to add it yourself. Put it in `.env.local`:
 
 ```bash
 # .env.local (not committed — see .gitignore)
@@ -53,10 +123,10 @@ EAS_PROJECT_ID=<the uuid eas init printed>
 ```
 
 This isn't a secret — it's a public identifier embedded in every build's
-manifest regardless of who set it (see the comment in `app.config.ts`). It's
+manifest regardless of who set it (see the comment in `app.config.cjs`). It's
 kept out of the repo only so a fork doesn't inherit your project by accident.
 
-### 2.2 Create a CI access token
+### 3.2 Create a CI access token
 
 **expo.dev → Account settings → Access Tokens → Create.** Copy the value —
 you won't see it again.
@@ -65,21 +135,21 @@ This token authenticates the GitHub Actions workflow to EAS. It is **not** a
 Supabase or Anthropic key, and the app itself never reads it — it authorises
 the build *request*, not anything inside the APK.
 
-### 2.3 Configure GitHub
+### 3.3 Configure GitHub
 
 **Repo → Settings → Secrets and variables → Actions:**
 
 | Kind | Name | Value |
 |---|---|---|
-| **Secret** | `EXPO_TOKEN` | The access token from 2.2 |
-| **Variable** | `EAS_PROJECT_ID` | The project id from 2.1 |
+| **Secret** | `EXPO_TOKEN` | The access token from 3.2 |
+| **Variable** | `EAS_PROJECT_ID` | The project id from 3.1 |
 
 Secret vs. variable is deliberate: the token can build under your account and
 must stay secret; the project id is public information, so it's a plain
 repository *variable*, visible in workflow logs, exactly as sensitive as
 nothing.
 
-### 2.4 Give the "preview" build your Supabase values
+### 3.4 Give the "preview" build your Supabase values
 
 The APK needs `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_SUPABASE_ANON_KEY`
 to run against your Supabase project — the same two values from
@@ -113,7 +183,7 @@ protects local dev).
 
 ---
 
-## 3. What's actually in `eas.json`
+## 4. What's actually in `eas.json`
 
 ```json
 {
@@ -142,11 +212,11 @@ that introduced it for the offline check that ran.
 
 ---
 
-## 4. Where the version number comes from
+## 5. Where the version number comes from
 
-`app.config.ts`:
+`app.config.cjs`:
 
-```ts
+```js
 version: process.env.APP_VERSION ?? '0.1.0',
 ```
 
@@ -160,14 +230,14 @@ hand-set version.
 
 The Android `versionCode` — a separate integer Android itself uses to decide
 whether one APK supersedes another — is unrelated and left to EAS's remote
-counter (§3), so it never needs to be reasoned about here.
+counter (§4), so it never needs to be reasoned about here.
 
 ---
 
-## 5. Building a preview APK without tagging anything
+## 6. Building a preview APK without tagging anything
 
 ```bash
-export EXPO_TOKEN=...      # from §2.2
+export EXPO_TOKEN=...      # from §3.2
 export EAS_PROJECT_ID=...  # or put it in .env.local
 scripts/build-android-apk.sh
 ```
@@ -179,18 +249,18 @@ argument to name the output differently.
 
 ---
 
-## 6. Security
+## 7. Security
 
 - **The APK never contains a Supabase service-role key or an Anthropic key.**
-  Neither is read by `app.config.ts`, neither is a valid `EXPO_PUBLIC_*` name,
-  and the `bundle-security` job re-proves this on every release by exporting a
-  real bundle and grepping it — the identical check documented in
+  Neither is read by `app.config.cjs`, neither is a valid `EXPO_PUBLIC_*`
+  name, and the `bundle-security` job re-proves this on every release by
+  exporting a real bundle and grepping it — the identical check documented in
   `docs/scanning.md` §2, run again here rather than trusted to still hold.
 - **`EXPO_TOKEN` cannot reach the APK.** It's consumed entirely by the EAS CLI
   process on the GitHub Actions runner, to authenticate the *build request*.
   It is never passed as a build-time `env` value in `eas.json`, so it is never
   a candidate for inlining, unlike `EXPO_PUBLIC_*` values.
-- **`EAS_PROJECT_ID` is intentionally not secret** — see §2.1. Treating it as
+- **`EAS_PROJECT_ID` is intentionally not secret** — see §3.1. Treating it as
   one would be the wrong kind of caution: it's already public in every build.
 - All four release jobs (`verify`, `database`, `bundle-security`,
   `build-android`) must pass before an APK is built; `build-android` cannot
@@ -199,25 +269,40 @@ argument to name the output differently.
 
 ---
 
-## 7. Reproducibility
+## 8. Reproducibility
 
 - `eas-cli` is invoked as `npx eas-cli@22.4.0` — an exact pinned version, not
   `@latest` — both in `scripts/build-android-apk.sh` and as the floor in
   `eas.json`'s `cli.version`. Bump both together, deliberately, the same
   convention this repo already uses for `SET_LIMITS` and other
   duplicated-on-purpose constants.
+- That pin does not, by itself, pin what `typescript` version `eas-cli`
+  resolves — see §2 — which is exactly why the config no longer depends on
+  one being resolvable at all.
 - Given the same tag and the same EAS environment configuration, the same
-  source produces the same APK modulo the versionCode (§3) and the compiler's
+  source produces the same APK modulo the versionCode (§4) and the compiler's
   own build id — nothing here introduces a random or time-based input beyond
   those two, both of which are Android/EAS's, not this pipeline's.
 
 ---
 
-## 8. What is and isn't verified here
+## 9. What is and isn't verified here
 
 **Verified in this environment**, without an Expo account or network access
 to Expo's build servers (neither is available here):
 
+- The exact reported failure — reproduced, not assumed. A real Node 20.18.1
+  and a real `eas-cli@22.4.0` install (which really does resolve
+  `typescript@7.0.2`, confirmed by reading its `node_modules` directly) were
+  used to drive `@expo/require-utils`'s own unmodified loader against the old
+  `app.config.ts` content: it failed with the reported error class. The same
+  loader, and separately `@expo/config`'s `getConfig()` — the function
+  `eas-cli` actually calls — were then run against the real, final
+  `app.config.cjs`: both succeeded, returning the correct `name`, `slug`, and
+  `version`.
+- `APP_VERSION` and `EAS_PROJECT_ID` still override correctly through that
+  same real, previously-failing toolchain — not just under this project's own
+  newer local Node.
 - `eas.json`'s `preview` profile resolves to exactly `distribution: internal`,
   `buildType: apk` — checked by loading the real `@expo/eas-json@22.0.0`
   package (matching the pinned CLI) and calling its own `resolveBuildProfile`
@@ -226,8 +311,16 @@ to Expo's build servers (neither is available here):
   confirmed by reading `eas-cli`'s own GraphQL fragment, not assumed.
 - `EXPO_TOKEN` is `eas-cli`'s documented non-interactive auth mechanism —
   confirmed by reading `SessionManager.js`.
-- `app.config.ts` evaluates correctly with and without `APP_VERSION` /
-  `EAS_PROJECT_ID` set (`npx expo config`, both ways, checked directly).
+- `npx expo config` — this project's own toolchain, the thing that already
+  worked before any of this — still resolves `app.config.cjs` correctly,
+  including the `APP_VERSION`/`EAS_PROJECT_ID` overrides.
+- Type-checking is unweakened: a deliberately introduced bad field in
+  `app.config.cjs` was caught by `tsc` and reported with a normal `error
+  TS2353`, then removed again.
+- ESLint coverage is unweakened: `app.config.cjs` is genuinely linted (not
+  silently skipped) — proven by planting an unused variable and watching
+  ESLint report it, the same test used to confirm coverage, not assumed from
+  config alone.
 - The full existing verification gate — tsc, ESLint, all 1,161 Jest tests, the
   428-assertion database suite, and `check:bundle` (with `APP_VERSION` and
   `EAS_PROJECT_ID` set, mirroring the release job exactly) — all still pass.
@@ -237,11 +330,13 @@ to Expo's build servers (neither is available here):
 
 **Not verified here, and cannot be from this environment:**
 
-- **An actual EAS build was never run.** There is no `EXPO_TOKEN` or
-  registered EAS project available in this session. Everything above the
-  network boundary — the request `eas build` makes, the remote build
-  finishing, the APK it produces installing on a real device — is
-  unavailable to test from here. The first real signal that this works end to
-  end is your first pushed tag.
+- **An actual authenticated EAS build was never run.** There is no
+  `EXPO_TOKEN` or registered EAS project available in this session. The
+  specific thing that was broken — reading the project's config — has been
+  reproduced and fixed and proven against the real, unmodified `eas-cli`
+  code; what remains untested from here is everything past that point: the
+  network request itself, the remote build finishing, and the APK it
+  produces installing on a real device. The first true end-to-end signal is
+  your first pushed tag.
 - **LDPlayer was not driven from here.** No emulator, no `adb`, matching
   Milestone 7's Android section.
