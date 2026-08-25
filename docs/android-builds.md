@@ -110,19 +110,60 @@ reach it.
 
 ```bash
 npx eas-cli@22.4.0 login       # opens a browser once; creates an Expo account if needed
-npx eas-cli@22.4.0 init        # registers this project on expo.dev
+npx eas-cli@22.4.0 init        # finds or creates the project on expo.dev
 ```
 
-`init` prints a project id (a UUID). Because `app.config.cjs` is a dynamic
-config rather than `app.json`, the CLI can't write the id back into it
-automatically — it will tell you to add it yourself. Put it in `.env.local`:
+Because `app.config.cjs` is a dynamic config rather than `app.json`, `init`
+can't write the project id back into it automatically. It still finds (or
+creates) the project and prints its id — a UUID — but then **warns and exits
+non-zero**:
+
+```
+Warning: Your project uses dynamic app configuration, and the EAS project ID
+can't automatically be added to it.
+Cannot automatically write to dynamic config at: app.config.cjs
+```
+
+That failure is expected and does not mean the project wasn't created —
+by the time it appears, the project already exists on expo.dev under the
+printed id. It only means `init` couldn't persist that id into the config
+file itself, which is exactly why `app.config.cjs` already reads it from
+`process.env.EAS_PROJECT_ID` instead (see the comment in that file) — this
+is Expo's own documented pattern for a dynamic config, not a workaround.
+
+**Two places need that id, and they behave differently:**
 
 ```bash
 # .env.local (not committed — see .gitignore)
 EAS_PROJECT_ID=<the uuid eas init printed>
 ```
 
-This isn't a secret — it's a public identifier embedded in every build's
+`.env.local` alone is enough for anything that goes through Expo's own config
+loading — `npx expo config`, `expo start`, `scripts/build-android-apk.sh`
+once you've exported it into the shell (see below) — but **not** for `eas
+init` itself. `eas-cli` resolves the project id for its own linking checks by
+shelling out to `expo config` with dotenv loading explicitly disabled
+(`EXPO_NO_DOTENV=1`), so a value that only lives in `.env.local` is invisible
+to that one step — confirmed by driving `eas-cli`'s real, unmodified config
+loader directly: with `EAS_PROJECT_ID` only in `.env.local` it still resolved
+`extra.eas.projectId` as `undefined`. It has to be a real environment
+variable in the shell that runs `eas init`:
+
+```bash
+export EAS_PROJECT_ID=<the uuid eas init printed>   # or: set -a; source .env.local; set +a
+npx eas-cli@22.4.0 init
+```
+
+With the id already exported, `init` now resolves `extra.eas.projectId` to a
+value that already matches the existing project, reports "Project already
+linked", and returns without ever trying to write to `app.config.cjs` — no
+warning, no error, and no second project is created. Do this once; every
+later command (`build:configure`, `build`) only needs `EAS_PROJECT_ID`
+exported the same way, which `scripts/build-android-apk.sh` already requires
+(§3.3 below is unaffected — CI sets it as a real GitHub Actions `env:` value,
+not a dotenv file, so it was never exposed to this issue).
+
+This id isn't a secret — it's a public identifier embedded in every build's
 manifest regardless of who set it (see the comment in `app.config.cjs`). It's
 kept out of the repo only so a fork doesn't inherit your project by accident.
 
@@ -303,6 +344,17 @@ to Expo's build servers (neither is available here):
 - `APP_VERSION` and `EAS_PROJECT_ID` still override correctly through that
   same real, previously-failing toolchain — not just under this project's own
   newer local Node.
+- The `eas init` dynamic-config warning (§3.1) — reproduced and its fix
+  confirmed the same way: the real `eas-cli@22.4.0` install's own
+  `getPrivateExpoConfigAsync` was called directly against this project. With
+  `EAS_PROJECT_ID` unset it resolved `extra.eas.projectId` as `undefined` —
+  the exact precondition that makes `eas init` try to write to the config and
+  fail. With `EAS_PROJECT_ID` exported as a real environment variable it
+  resolved correctly. With the same value placed only in `.env.local` (not
+  exported) it was `undefined` again, confirming that step's config
+  resolution ignores dotenv files (`eas-cli` passes `EXPO_NO_DOTENV=1` when
+  it shells out to `expo config` internally) — read directly out of
+  `eas-cli`'s own source, not inferred from behavior.
 - `eas.json`'s `preview` profile resolves to exactly `distribution: internal`,
   `buildType: apk` — checked by loading the real `@expo/eas-json@22.0.0`
   package (matching the pinned CLI) and calling its own `resolveBuildProfile`
